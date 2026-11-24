@@ -7,3 +7,4 @@ Các bài học MuJoCo.
 | [bai_gap_do](bai_gap_do/) | Cánh tay robot 5 bậc tự do gắp và đặt vật: IK Damped Least Squares, lập quỹ đạo, kẹp bằng ma sát |
 | [bai_xep_coc](bai_xep_coc/) | Xếp 3 cốc thành kim tự tháp: lập kế hoạch nhiều vật, chọn hướng kẹp tránh va chạm, đặt vật lên vật |
 | [bai_camera](bai_camera/) | Tìm cốc bằng camera RealSense giả lập (color + depth có nhiễu), điều khiển vòng kín: nhìn lại trước mỗi lần gắp, phát hiện kẹp hụt |
+| [bai_do_ben](bai_do_ben/) | Thử độ bền: bơm 6 loại sai số (nhiễu camera, hiệu chỉnh tay–mắt, encoder, ma sát, khối lượng), đo tỉ lệ thành công qua 1.290 lần chạy |
