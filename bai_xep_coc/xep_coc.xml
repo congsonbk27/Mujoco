@@ -1,0 +1,149 @@
+<!--
+  Bài "Xếp 3 cốc thành kim tự tháp": cánh tay giống bài gắp đồ (xem ../bai_gap_do/canh_tay.xml),
+  thêm 3 cái cốc (hình nón cụt, úp ngược: miệng ở dưới, đáy ở trên).
+
+        [ C3 ]          tầng 2: vành miệng C3 tựa lên đáy của C1 và C2
+     [ C1 ][ C2 ]       tầng 1: 2 cốc úp cạnh nhau
+
+  Gốc toạ độ của mỗi cốc = tâm vành miệng (đáy khi úp), trục z hướng lên đáy cốc.
+-->
+<mujoco model="xep_coc">
+  <compiler angle="radian" autolimits="true"/>
+
+  <!-- Ghi chú: ở MuJoCo 4.x, va chạm giữa các mặt phẳng của vật lồi đã sinh NHIỀU điểm tiếp xúc
+       (đo được 4 điểm cốc-sàn) nên cốc đứng vững khi chồng. Với MuJoCo 3.x, nếu cốc lắc lư
+       hãy thêm <flag multiccd="enable"/> bên trong <option>. -->
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10"/>
+
+  <visual>
+    <global offwidth="640" offheight="480"/>
+  </visual>
+
+  <asset>
+    <texture name="luoi" type="2d" builtin="checker" rgb1=".85 .85 .85" rgb2=".7 .7 .7"
+             width="300" height="300"/>
+    <material name="luoi" texture="luoi" texrepeat="8 8"/>
+    <material name="kim_loai" rgba=".55 .6 .7 1"/>
+    <material name="ngon" rgba=".2 .2 .2 1"/>
+    <material name="coc_do" rgba=".9 .2 .2 1"/>
+    <material name="coc_xanh" rgba=".2 .5 .9 1"/>
+    <material name="coc_vang" rgba=".95 .75 .1 1"/>
+    <!-- Cốc: chỉ khai báo các đỉnh của 2 đường tròn, MuJoCo tự dựng bao lồi (convex hull).
+         Va chạm của mesh trong MuJoCo LUÔN dùng bao lồi -> cốc là khối đặc, điều này không
+         ảnh hưởng vì ta chỉ kẹp mặt ngoài và chồng cốc úp. -->
+    <mesh name="coc" vertex="
+              0.0350 0.0000 0 0.0338 0.0091 0 0.0303 0.0175 0 0.0247 0.0247 0
+              0.0175 0.0303 0 0.0091 0.0338 0 0.0000 0.0350 0 -0.0091 0.0338 0
+              -0.0175 0.0303 0 -0.0247 0.0247 0 -0.0303 0.0175 0 -0.0338 0.0091 0
+              -0.0350 0.0000 0 -0.0338 -0.0091 0 -0.0303 -0.0175 0 -0.0247 -0.0247 0
+              -0.0175 -0.0303 0 -0.0091 -0.0338 0 -0.0000 -0.0350 0 0.0091 -0.0338 0
+              0.0175 -0.0303 0 0.0247 -0.0247 0 0.0303 -0.0175 0 0.0338 -0.0091 0
+              0.0250 0.0000 0.09 0.0241 0.0065 0.09 0.0217 0.0125 0.09 0.0177 0.0177 0.09
+              0.0125 0.0217 0.09 0.0065 0.0241 0.09 0.0000 0.0250 0.09 -0.0065 0.0241 0.09
+              -0.0125 0.0217 0.09 -0.0177 0.0177 0.09 -0.0217 0.0125 0.09 -0.0241 0.0065 0.09
+              -0.0250 0.0000 0.09 -0.0241 -0.0065 0.09 -0.0217 -0.0125 0.09 -0.0177 -0.0177 0.09
+              -0.0125 -0.0217 0.09 -0.0065 -0.0241 0.09 -0.0000 -0.0250 0.09 0.0065 -0.0241 0.09
+              0.0125 -0.0217 0.09 0.0177 -0.0177 0.09 0.0217 -0.0125 0.09 0.0241 -0.0065 0.09"/>
+  </asset>
+
+  <default>
+    <joint damping="2" armature="0.05"/>
+    <geom contype="0" conaffinity="0" material="kim_loai"/>
+    <default class="va_cham">
+      <!-- solref="0.004 1": tiếp xúc cứng, giảm "trượt mềm" của ma sát (xem bài gắp đồ, lỗi 3) -->
+      <geom contype="1" conaffinity="1" friction="1.5 0.02 0.001" condim="4" solref="0.004 1"/>
+    </default>
+    <default class="coc">
+      <geom type="mesh" mesh="coc" mass="0.03" contype="1" conaffinity="1"
+            friction="1 0.02 0.001" condim="4" solref="0.004 1"/>
+    </default>
+    <position kp="500" forcerange="-80 80"/>
+  </default>
+
+  <worldbody>
+    <light pos="0 -1 2" dir="0 0.5 -1" diffuse=".8 .8 .8"/>
+    <light pos="1 1 2" dir="-0.5 -0.5 -1" diffuse=".4 .4 .4"/>
+    <geom name="san" type="plane" size="1 1 0.05" material="luoi" class="va_cham"/>
+
+    <!-- Tâm kim tự tháp (chỉ để nhìn) -->
+    <site name="dich" pos="0.05 0.42 0.001" size="0.09 0.001" type="cylinder" rgba="0 .8 0 .3"/>
+
+    <body name="de">
+      <geom type="cylinder" size="0.09 0.05" pos="0 0 0.05"/>
+
+      <body name="than" pos="0 0 0.1" gravcomp="1">
+        <joint name="xoay_de" axis="0 0 1" range="-3.1 3.1"/>
+        <geom type="cylinder" size="0.06 0.05" pos="0 0 0.05"/>
+
+        <body name="tay_tren" pos="0 0 0.1" gravcomp="1">
+          <joint name="vai" axis="0 1 0" range="-2 2"/>
+          <geom type="capsule" fromto="0 0 0  0 0 0.3" size="0.035"/>
+
+          <body name="tay_duoi" pos="0 0 0.3" gravcomp="1">
+            <joint name="khuyu" axis="0 1 0" range="-2.7 2.7"/>
+            <geom type="capsule" fromto="0 0 0  0 0 0.3" size="0.03"/>
+
+            <body name="co_tay" pos="0 0 0.3" gravcomp="1">
+              <joint name="co_tay" axis="0 1 0" range="-2.2 2.2"/>
+              <geom type="sphere" size="0.035"/>
+
+              <body name="ban_tay" pos="0 0 0.04" gravcomp="1">
+                <joint name="xoay_tay" axis="0 0 1" range="-3.1 3.1"/>
+                <geom type="box" size="0.03 0.065 0.012" pos="0 0 0.02"/>
+                <site name="tcp" pos="0 0 0.14" size="0.008" rgba="1 0 0 1"/>
+
+                <body name="ngon_trai" pos="0 0 0.03" gravcomp="1">
+                  <joint name="ngon_trai" type="slide" axis="0 1 0" range="0 0.05" damping="5"/>
+                  <geom type="box" size="0.012 0.008 0.05" pos="0 0.008 0.08"
+                        class="va_cham" material="ngon" mass="0.05"/>
+                </body>
+                <body name="ngon_phai" pos="0 0 0.03" gravcomp="1">
+                  <joint name="ngon_phai" type="slide" axis="0 -1 0" range="0 0.05" damping="5"/>
+                  <geom type="box" size="0.012 0.008 0.05" pos="0 -0.008 0.08"
+                        class="va_cham" material="ngon" mass="0.05"/>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+
+    <!-- 3 cốc úp ngược, đặt rải rác -->
+    <body name="coc1" pos="0.40 -0.22 0">
+      <freejoint/>
+      <geom name="coc1" class="coc" material="coc_do"/>
+    </body>
+    <body name="coc2" pos="0.48 0.02 0">
+      <freejoint/>
+      <geom name="coc2" class="coc" material="coc_xanh"/>
+    </body>
+    <body name="coc3" pos="0.27 -0.40 0">
+      <freejoint/>
+      <geom name="coc3" class="coc" material="coc_vang"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="xoay_de"  joint="xoay_de"  ctrlrange="-3.1 3.1"/>
+    <position name="vai"      joint="vai"      ctrlrange="-2 2"/>
+    <position name="khuyu"    joint="khuyu"    ctrlrange="-2.7 2.7"/>
+    <position name="co_tay"   joint="co_tay"   ctrlrange="-2.2 2.2"/>
+    <position name="xoay_tay" joint="xoay_tay" ctrlrange="-3.1 3.1" kp="200"/>
+    <position name="kep" joint="ngon_trai" ctrlrange="0 0.05" kp="1000" forcerange="-30 30"/>
+  </actuator>
+
+  <equality>
+    <joint joint1="ngon_phai" joint2="ngon_trai" polycoef="0 1 0 0 0" solref="0.004 1"/>
+  </equality>
+
+  <keyframe>
+    <key name="san_sang"
+         qpos="0 0.3 1.0 1.84 0 0.045 0.045
+               0.40 -0.22 0  1 0 0 0
+               0.48  0.02 0  1 0 0 0
+               0.27 -0.40 0  1 0 0 0"
+         ctrl="0 0.3 1.0 1.84 0 0.045"/>
+  </keyframe>
+</mujoco>
