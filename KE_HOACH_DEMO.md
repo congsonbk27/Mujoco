@@ -108,6 +108,17 @@ Một file chạy duy nhất, mở viewer MuJoCo:
 1. ~~Máy chạy demo~~ **Đã có:** laptop i7-12700H (14 nhân / 20 luồng), RAM 16 GB, RTX 3050 Ti 4 GB.
    - Đủ dư cho demo. Chạy `python demo/kiem_tra_may.py` trên máy này để xác nhận.
    - Kết quả tham khảo trên máy chủ yếu hơn nhiều (4 nhân, không GPU): vật lý 108x thời gian thực, camera 83 ms/khung, xếp tháp bản nâng cấp 9 s → đạt.
-   - **Phải kiểm tra:** Python có chạy trên RTX không (laptop 2 GPU hay dùng nhầm GPU tích hợp), và **cắm sạc** khi demo (rút sạc CPU/GPU bị hạ xung). Còn thiếu: hệ điều hành gì?
+   - **Phải kiểm tra:** Python có chạy trên RTX không (laptop 2 GPU hay dùng nhầm GPU tích hợp), và **cắm sạc** khi demo (rút sạc CPU/GPU bị hạ xung). **Hệ điều hành: Ubuntu** (cùng môi trường với lúc phát triển, ít rủi ro nhất).
+   - **Cài đặt trên máy demo (Ubuntu):**
+     ```bash
+     nvidia-smi                       # kiểm tra driver NVIDIA đã cài (nếu lỗi: sudo ubuntu-drivers install, rồi khởi động lại)
+     python3 -m venv ~/venv-demo && source ~/venv-demo/bin/activate
+     pip install mujoco numpy pillow matplotlib PyOpenGL
+     __NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia python demo/kiem_tra_may.py
+     ```
+     Mục 5 trong kết quả phải ghi **NVIDIA GeForce RTX 3050 Ti**. Nếu ra Intel/llvmpipe thì chạy
+     `sudo prime-select nvidia` rồi đăng xuất, đăng nhập lại.
+   - Khi demo **không** đặt `MUJOCO_GL=egl` (biến đó chỉ dùng khi chạy không màn hình); viewer và camera ảo
+     sẽ dùng chung GLFW trên GPU.
 2. Có cần giao diện tiếng Anh cho khách không? (Hiện code và chữ trên màn hình đều tiếng Việt.)
 3. Kịch bản "cốc nằm nghiêng" có quan trọng với khách không, hay chỉ cần xếp cốc đứng?
