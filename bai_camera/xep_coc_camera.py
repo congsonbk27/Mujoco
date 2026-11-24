@@ -168,7 +168,8 @@ def dat(robot, p_dat):
     robot.toi([x, y, Z_DI], NGON_MO, T=1.2)
 
 
-def chay(xem=False, gif=False, seed=None, pha=False):
+def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None):
+    """tuy_chinh(m, d, cam): hàm tuỳ chọn, gọi trước khi chạy để bơm sai số (xem bai_do_ben)."""
     m = tao_model()
     d = mujoco.MjData(m)
     mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
@@ -191,6 +192,8 @@ def chay(xem=False, gif=False, seed=None, pha=False):
         viewer = mjv.launch_passive(m, d)
     robot = RoBot(m, d, viewer, mujoco.Renderer(m, 270, 360) if gif else None)
     cam = CameraRealSense(m, seed=0 if seed is None else seed)
+    if tuy_chinh is not None:
+        tuy_chinh(m, d, cam)
     anh = []
 
     def cho_trong(ten, goi_y):

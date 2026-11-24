@@ -39,6 +39,11 @@ class CameraRealSense:
         self.fx = self.fy
         self.cx, self.cy = (rong - 1) / 2, (cao - 1) / 2
 
+        # Sai số hiệu chỉnh tay-mắt: robot TƯỞNG camera đặt ở (R_lech·R_that, t_that + t_lech).
+        # Mặc định = 0 (hiệu chỉnh hoàn hảo). Bài bai_do_ben dùng để thử độ bền.
+        self.R_lech = np.eye(3)
+        self.t_lech = np.zeros(3)
+
     def chup(self, d):
         """Chụp 1 khung hình: trả về (color, depth)."""
         self.r_mau.update_scene(d, self.cam, self.tuy_chon)
@@ -81,5 +86,5 @@ class CameraRealSense:
 
     def _the_gioi(self, p_cam):
         d = self._d
-        R = d.cam_xmat[self.cam].reshape(3, 3)
-        return p_cam @ R.T + d.cam_xpos[self.cam]
+        R = self.R_lech @ d.cam_xmat[self.cam].reshape(3, 3)
+        return p_cam @ R.T + d.cam_xpos[self.cam] + self.t_lech
