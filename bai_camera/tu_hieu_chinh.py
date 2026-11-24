@@ -20,6 +20,7 @@ import numpy as np
 
 from nhan_dang import hsv
 
+LAM_CANG_TAY = 0.3
 TEN_MARKER = ["marker_trai", "marker_phai"]
 
 
@@ -86,7 +87,7 @@ class TuHieuChinh:
             for k, ys in theo_marker.items():
                 self.mau.append((rb.q.copy(), k, np.median(ys, axis=0)))
 
-    def giai(self, so_vong=20, w_z=0.3, lam=0.02, lam_co_tay=0.3):
+    def giai(self, so_vong=20, w_z=0.3, lam=0.02, lam_co_tay=0.3, lam_cang_tay=LAM_CANG_TAY):
         """Gauss-Newton tìm ĐỒNG THỜI:
              δ (5)  : lệch điểm 0 encoder các khớp
              r (2)  : sai số góc camera quanh x, y  (xoay quanh z trùng với δ của khớp đế -> bỏ)
@@ -106,6 +107,7 @@ class TuHieuChinh:
         lam_vec = np.full(len(th), lam)
         # các khớp cổ tay (xoay cẳng tay, gập cổ tay, xoay tay): 3 khớp cuối trong KHOP_TAY
         lam_vec[3:n_d] = lam_co_tay
+        lam_vec[3] = lam_cang_tay
 
         def tach(t):
             return t[:n_d], ma_tran_xoay_nho(t[n_d], t[n_d + 1]), t[n_d + 2:]
