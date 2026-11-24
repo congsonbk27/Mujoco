@@ -75,9 +75,10 @@ def lech_encoder(muc, rng):
     Actuator position: lực = kp·ctrl + biasprm[0] − kp·q. Đặt biasprm[0] = kp·δ thì khớp dừng ở
     q = ctrl + δ: robot ra lệnh góc ctrl nhưng thực tế đứng ở ctrl + δ, đúng như encoder lệch 0.
     """
-    dau = rng.choice([-1, 1], size=5)
+    from gap_do import KHOP_TAY
+    dau = rng.choice([-1, 1], size=len(KHOP_TAY))
     def f(m, d, cam):
-        for i, ten in enumerate(["xoay_de", "vai", "khuyu", "co_tay", "xoay_tay"]):
+        for i, ten in enumerate(KHOP_TAY):
             a = m.actuator(ten).id
             m.actuator_biasprm[a, 0] = m.actuator_gainprm[a, 0] * np.radians(muc) * dau[i]
     return f

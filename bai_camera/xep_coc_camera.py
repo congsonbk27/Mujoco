@@ -36,7 +36,7 @@ from tu_hieu_chinh import tu_hieu_chinh  # noqa: E402
 XML_GOC = THU_MUC.parent / "bai_xep_coc" / "xep_coc.xml"
 # Tư thế "đứng chờ" (góc khớp): tay dựng gần thẳng đứng -> nhìn từ camera trên cao, tay chỉ chiếm
 # một vùng nhỏ quanh đế, không che cốc. Cho bằng GÓC KHỚP chứ không bằng vị trí TCP.
-Q_CHO = np.array([0.0, -0.2, 0.3, 1.0, 0.0])
+Q_CHO = np.array([0.0, -0.2, 0.3, 0.0, 1.0, 0.0])
 NGUONG_KEP_HUT = 0.01                    # ngón đóng < 1 cm -> giữa 2 ngón không có cốc
 SO_LAN_THU = 3
 
@@ -139,7 +139,7 @@ class RoBot:
 
     def giai_ik_moi(self, p_dich):
         """Giải IK từ một điểm khởi đầu 'hợp lý': đế quay về phía đích, tay gập vừa phải."""
-        q0 = np.array([np.arctan2(p_dich[1], p_dich[0]), 0.3, 1.0, 1.84, 0.0])
+        q0 = np.array([np.arctan2(p_dich[1], p_dich[0]), 0.3, 1.0, 0.0, 1.84, 0.0])
         q, sai = self.ik.giai(q0, np.asarray(p_dich, float), np.array([0.0, 1.0, 0.0]), so_vong=500)
         assert sai < 1e-3, f"IK không hội tụ tới {p_dich} (sai {sai:.4f} m)"
         return q
