@@ -72,39 +72,70 @@ class TuHieuChinh:
             rb.toi_khop(q, T=1.0)
             rb.buoc(75)
             self.cam.cap_nhat_ngoai(rb.d)
-            color, depth = self.cam.chup(rb.d)
             du_doan = self.fk_marker(rb.q)              # dự đoán với δ = 0
-            for y in do_marker_3d(self.cam, color, depth):
-                # gán cụm đo được cho marker dự đoán gần nhất (lệch vài cm << 10 cm giữa 2 marker)
-                k = int(np.argmin([np.linalg.norm(y[:2] - dd[:2]) for dd in du_doan]))
-                if np.linalg.norm(y[:2] - du_doan[k][:2]) < 0.04:
-                    self.mau.append((rb.q.copy(), k, y))
+            # 3 khung hình mỗi tư thế, gom lại rồi lấy trung vị theo từng marker (lọc nhiễu)
+            theo_marker = {}
+            for _ in range(3):
+                color, depth = self.cam.chup(rb.d)
+                for y in do_marker_3d(self.cam, color, depth):
+                    # gán cụm đo được cho marker dự đoán gần nhất (lệch vài cm << 10 cm giữa 2 marker)
+                    k = int(np.argmin([np.linalg.norm(y[:2] - dd[:2]) for dd in du_doan]))
+                    if np.linalg.norm(y[:2] - du_doan[k][:2]) < 0.04:
+                        theo_marker.setdefault(k, []).append(y)
+                rb.buoc(10)
+            for k, ys in theo_marker.items():
+                self.mau.append((rb.q.copy(), k, np.median(ys, axis=0)))
 
-    def giai(self, so_vong=15, w_z=0.3):
-        """Gauss-Newton tìm δ. Trọng số trục z nhỏ hơn vì depth nhiễu hơn x, y."""
+    def giai(self, so_vong=20, w_z=0.3, lam=0.02, lam_co_tay=0.3):
+        """Gauss-Newton tìm ĐỒNG THỜI:
+             δ (5)  : lệch điểm 0 encoder các khớp
+             r (2)  : sai số góc camera quanh x, y  (xoay quanh z trùng với δ của khớp đế -> bỏ)
+             b (3)  : sai số vị trí camera
+           Mô hình:  FK(q + δ) = Rot(r)·y + b     (y = vị trí marker camera đo được)
+        Nếu chỉ ước lượng δ, mọi sai số của camera bị "đổ" hết cho encoder -> δ sai -> tay nghiêng.
+        lam: regularization (Tikhonov) kéo tham số về 0 khi dữ liệu không đủ để xác định
+        (đơn vị chuẩn hoá: 1 rad ~ 1 m ~ 1).
+        lam_co_tay: regularization MẠNH hơn cho 2 khớp cổ tay (co_tay, xoay_tay). Marker gắn sát cổ
+        tay (~4 cm từ trục khớp) nên cổ tay quay một chút marker gần như không đổi -> khó đo; nhưng
+        TCP cách trục ~18 cm -> ước lượng sai một chút là tay nghiêng. Đo được: không có sai số nào
+        mà vẫn ước lượng cổ tay lệch -1..-1.6 độ -> tay nghiêng, cốc đổ khi camera nhiễu."""
         W = np.array([1.0, 1.0, w_z])
-        delta = np.zeros(len(self.qadr))
-        eps = 1e-5
+        n_d = len(self.qadr)
+        th = np.zeros(n_d + 5)
+        eps = 1e-6
+        lam_vec = np.full(len(th), lam)
+        lam_vec[3:5] = lam_co_tay           # 2 khớp cổ tay (thứ tự KHOP_TAY: đế, vai, khuỷu, cổ tay, xoay tay)
 
-        def phan_du(dl):
-            r = []
-            for q, k, y in self.mau:
-                r.append(W * (self.fk_marker(q + dl)[k] - y))
-            return np.concatenate(r)
+        def tach(t):
+            return t[:n_d], ma_tran_xoay_nho(t[n_d], t[n_d + 1]), t[n_d + 2:]
+
+        def phan_du(t):
+            dl, R, b = tach(t)
+            r = [W * (self.fk_marker(q + dl)[k] - (R @ y + b)) for q, k, y in self.mau]
+            return np.concatenate(r + [lam_vec * t])
 
         for _ in range(so_vong):
-            r = phan_du(delta)
-            J = np.zeros((len(r), len(delta)))
-            for j in range(len(delta)):
-                dd = delta.copy()
-                dd[j] += eps
-                J[:, j] = (phan_du(dd) - r) / eps
+            r = phan_du(th)
+            J = np.zeros((len(r), len(th)))
+            for j in range(len(th)):
+                tt = th.copy()
+                tt[j] += eps
+                J[:, j] = (phan_du(tt) - r) / eps
             buoc = np.linalg.lstsq(J, -r, rcond=None)[0]
-            delta += buoc
-            if np.linalg.norm(buoc) < 1e-6:
+            th += buoc
+            if np.linalg.norm(buoc) < 1e-7:
                 break
-        rms = np.sqrt(np.mean(phan_du(delta).reshape(-1, 3) ** 2, axis=0)) / W
-        return delta, rms
+        dl, R, b = tach(th)
+        r = phan_du(th)[:-len(th)].reshape(-1, 3) / W   # bỏ các số hạng regularization
+        return dl, R, b, np.sqrt(np.mean(r ** 2, axis=0))
+
+
+def ma_tran_xoay_nho(rx, ry):
+    """Ma trận xoay góc nhỏ quanh x rồi y."""
+    cx, sx, cy, sy = np.cos(rx), np.sin(rx), np.cos(ry), np.sin(ry)
+    Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+    Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+    return Ry @ Rx
 
 
 # Các điểm hiệu chỉnh: rải khắp vùng làm việc, 2 độ cao, để các khớp gập ở nhiều góc khác nhau
@@ -114,11 +145,14 @@ DIEM_HIEU_CHINH = [np.array([r * np.cos(a), r * np.sin(a), z])
 
 
 def tu_hieu_chinh(robot, cam):
-    """Chạy toàn bộ quy trình, gắn kết quả vào robot (robot.bu = δ̂). Trả về (δ̂, rms, số mẫu)."""
+    """Chạy toàn bộ quy trình: gắn δ̂ vào robot (robot.bu) và phép sửa vào camera.
+    Trả về (δ̂, (R, b), rms, số mẫu)."""
     hc = TuHieuChinh(robot, cam)
     hc.thu_mau(DIEM_HIEU_CHINH)
     if len(hc.mau) < 8:
-        return None, None, len(hc.mau)
-    delta, rms = hc.giai()
+        return None, None, None, len(hc.mau)
+    delta, R, b, rms = hc.giai()
     robot.bu = delta
-    return delta, rms, len(hc.mau)
+    # sửa camera: từ nay mọi điểm camera đo được (cốc, marker) đều qua phép biến đổi R·y + b
+    cam.R_sua, cam.t_sua = R, b
+    return delta, (R, b), rms, len(hc.mau)
