@@ -2,19 +2,23 @@
 
 ![do_ben](do_ben.png)
 
+> **Cập nhật:** đã làm bản nâng cấp sửa các điểm yếu tìm ra ở đây. So sánh trước/sau ở [mục 5](#5-nâng-cấp-và-so-sánh-trước--sau).
+
 Bài [camera](../bai_camera/) xếp tháp thành công 400/400 lần **trong mô phỏng lý tưởng**. Robot thật thì luôn có sai số. Bài này trả lời câu hỏi: *mỗi loại sai số được phép lớn tới đâu thì tháp vẫn đứng?*
 
 Cách làm:
 
 - Với mỗi **nguồn sai số**, tăng dần **mức độ**.
 - Ở mỗi mức, chạy 30 lần với cốc rải ngẫu nhiên. Mọi mức dùng **cùng một bộ seed**, nên khác biệt giữa các mức chỉ đến từ sai số.
-- Tổng cộng 1.290 lần chạy, mất khoảng 9 phút trên 4 nhân. Không lần nào mô phỏng bị nổ.
+- Tổng cộng 1.290 lần chạy, mất khoảng 9 phút trên 4 nhân (bản nâng cấp: khoảng 90 phút, vì có thêm bước tự hiệu chỉnh và chụp nhiều ảnh hơn). Không lần nào mô phỏng bị nổ.
+- Camera treo ở độ cao 1.25 m (dời lên từ 1.1 m để thấy được bàn tay khi ở trên tháp, cần cho bản nâng cấp). Các số liệu dưới đây đều đo với vị trí camera này.
 
 ```bash
 pip install matplotlib
 MUJOCO_GL=egl python thu_do_ben.py           # chạy đầy đủ -> ket_qua.csv
+MUJOCO_GL=egl python thu_do_ben.py --nang-cap   # bản nâng cấp -> ket_qua_nang_cap.csv
 MUJOCO_GL=egl python thu_do_ben.py --nhanh   # 6 lần/mức, ~2 phút
-python ve_bieu_do.py                          # -> do_ben.png
+python ve_bieu_do.py                          # -> do_ben.png (+ so_sanh.png nếu có kết quả nâng cấp)
 ```
 
 | File | Nội dung |
@@ -66,24 +70,24 @@ Mỗi lần hỏng được ghi kèm lý do:
 
 | Nguồn sai số | Tháp đứng ≥ 95% khi | Gãy ở đâu |
 |---|---|---|
-| Nhiễu depth | σ ≤ 20 mm @1 m | 40 mm: 0% (C3 rơi, cốc đổ) |
-| Tay–mắt: lệch vị trí | ≤ 15 mm | 30 mm: 40% |
-| Tay–mắt: lệch góc | ≤ 1° | 1.5°: 37%, 2°: 10% |
-| Lệch encoder | ≤ 0.5° mỗi khớp | 1°: 90%, 1.5°: 70%, 2°: 47% |
+| Nhiễu depth | σ ≤ 10 mm @1 m | 20 mm: 83%, 40 mm: 0% |
+| Tay–mắt: lệch vị trí | ≤ 15 mm | 20 mm: 93%, 30 mm: 43% |
+| Tay–mắt: lệch góc | ≤ 1° | 1.5°: 23%, 2°: 10% |
+| Lệch encoder | ≤ 0.5° mỗi khớp | 1°: 90%, 1.5°: 70%, 2°: 43% |
 | Ma sát ngón–cốc | μ ≥ 0.2 | μ = 0.1: 0% |
 | Khối lượng cốc | mọi mức tới 1.5 kg | không gãy |
-| **Kết hợp** | cấp 1 và cấp 2: **100%** | cấp 3: 50% |
+| **Kết hợp** | cấp 1 và cấp 2: **100%** | cấp 3: 43% |
 
-Với tiêu chí "tháp đẹp", các ngưỡng chặt hơn nhiều. Ví dụ: encoder lệch 0.5° thì tháp vẫn đứng 100%, nhưng chỉ đẹp 70%. Ở cấp kết hợp 2, tháp đứng 100% nhưng chỉ đẹp 50%.
+Với tiêu chí "tháp đẹp", các ngưỡng chặt hơn nhiều. Ví dụ: encoder lệch 0.5° thì tháp vẫn đứng 100%, nhưng chỉ đẹp 70%. Ở cấp kết hợp 2, tháp đứng 100% nhưng chỉ đẹp 43%.
 
 ### 3.1 Sai số GÓC là nguy hiểm nhất, vì có cánh tay đòn
 
 Lệch 1° nghe rất nhỏ, nhưng nó bị khuếch đại bởi khoảng cách:
 
-- Camera treo cao 1.1 m: lệch 1° → điểm đo dịch `1.1 × tan 1°` ≈ **19 mm**.
+- Camera treo cao 1.25 m: lệch 1° → điểm đo dịch `1.25 × tan 1°` ≈ **22 mm**.
 - Cánh tay dài khoảng 0.6 m: mỗi khớp lệch 0.5° → TCP dịch ≈ **5 mm**. 5 khớp cùng lệch thì sai số cộng dồn.
 
-So sánh: lệch *vị trí* camera 15 mm thì tháp vẫn đứng 100%, trong khi lệch *góc* chỉ 1.5° (≈ 29 mm ở mặt bàn) thì tháp chỉ đứng 37%.
+So sánh: lệch *vị trí* camera 15 mm thì tháp vẫn đứng 100%, trong khi lệch *góc* chỉ 1.5° (≈ 33 mm ở mặt bàn, camera cao 1.25 m) thì tháp chỉ đứng 23%.
 
 **Bài học khi lên robot thật:** khi hiệu chỉnh tay–mắt, góc quan trọng hơn vị trí. Encoder cần được hiệu chỉnh điểm 0 tới mức dưới 0.5°.
 
@@ -136,32 +140,83 @@ Cách sửa: dùng chiều cao cốc đã biết (9 cm) thay vì đo, hoặc fit
 Từ kết quả trên, muốn tháp đứng ≥ 95% thì mỗi nguồn sai số **riêng lẻ** phải nằm trong:
 
 ```
-nhiễu depth      ≤ 20 mm @ 1 m   (D435 trong điều kiện tốt: ~10-20 mm @ 1 m -> sát giới hạn)
+nhiễu depth      ≤ 10 mm @ 1 m   (D435 trong điều kiện tốt: ~10-20 mm @ 1 m -> sát giới hạn)
 tay–mắt vị trí   ≤ 15 mm
 tay–mắt góc      ≤ 1°            <- khó nhất, cần hiệu chỉnh cẩn thận
 encoder          ≤ 0.5° mỗi khớp <- khó với servo rẻ tiền (độ rơ hộp số thường 0.5–1°)
 ma sát ngón–cốc  ≥ 0.2           (≥ 0.12 về lý thuyết; cốc nhựa ướt có thể thấp hơn)
 ```
 
-Khi mọi nguồn **cùng có mặt** thì sai số cộng dồn. Cấp 2 ("bình thường", mỗi nguồn ở khoảng 1/2 tới 1/3 ngưỡng) vẫn đứng 100%. Cấp 3 (mỗi nguồn ở khoảng 1/2 tới 1 ngưỡng) chỉ còn 50%.
+Khi mọi nguồn **cùng có mặt** thì sai số cộng dồn. Cấp 2 ("bình thường", mỗi nguồn ở khoảng 1/2 tới 1/3 ngưỡng) vẫn đứng 100%. Cấp 3 (mỗi nguồn ở khoảng 1/2 tới 1 ngưỡng) chỉ còn 43%.
 
 **Kết luận:**
 
 - Với robot giá rẻ (servo hobby, độ rơ ~1°), nên kỳ vọng tỷ lệ thành công khoảng **50–90%** nếu giữ nguyên thuật toán hiện tại.
-- Muốn cao hơn thì phải thêm visual servoing khi đặt cốc (mục 3.2), chứ không chỉ mua camera tốt hơn.
+- Muốn cao hơn thì phải để camera đo cả bàn tay, chứ không chỉ mua camera tốt hơn. Bản nâng cấp ở mục 5 làm đúng việc đó.
 
 Lưu ý: đây là ước lượng từ mô phỏng. Mô phỏng vẫn còn bỏ qua nhiều thứ, như cốc mềm bị bóp méo, ánh sáng thay đổi, rung động và độ trễ điều khiển. Con số thật cần được đo trên robot thật.
 
-## 5. Những điều rút ra khi viết bài
+## 5. Nâng cấp và so sánh trước / sau
+
+![so_sanh](so_sanh.png)
+
+Bản nâng cấp (bật bằng `nang_cap=True` / `--nang-cap` trong `../bai_camera/xep_coc_camera.py`) sửa các điểm yếu tìm được ở mục 3:
+
+1. **Phát hiện rơi cốc** (sửa mục 3.4): kiểm tra độ mở ngón cả *sau khi nhấc* và *khi tới trên đích*. Nếu cốc đã tuột thì quay lại nhìn và gắp lại.
+2. **Gắn 2 marker màu hồng lên mu bàn tay** để camera đo được vị trí *thật* của tay.
+3. **Tự hiệu chỉnh khi khởi động** (`../bai_camera/tu_hieu_chinh.py`): tay đi qua 12 tư thế, camera đo marker, rồi giải Gauss-Newton để ước lượng **đồng thời** độ lệch encoder từng khớp và sai số vị trí/góc của camera. Từ đó về sau, mọi lệnh điều khiển và mọi điểm camera đo đều được bù.
+4. **Chỉnh tay bằng camera** (visual servoing) trước khi gắp và trước khi thả: đo vị trí tay, rồi dịch tay tới khi lệch dưới 1.5 mm. Mỗi lần đo lọc qua 3 ảnh; lần đo nào bảo phải dịch quá 2 cm thì bỏ qua.
+
+### 5.1 Kết quả (tháp đứng vững, 30 lần/mức, cùng bộ seed)
+
+| Nguồn sai số | Mức | Trước | Sau |
+|---|---|---|---|
+| Tay–mắt: lệch vị trí | 30 mm | 43% | **100%** |
+| | 40 mm | 23% | **97%** |
+| Tay–mắt: lệch góc | 1.5° | 23% | **100%** |
+| | 2° | 10% | **100%** |
+| | 3° | 3% | **67%** |
+| Lệch encoder | 2° | 43% | **100%** |
+| | 3° | 13% | **93%** |
+| | 4° | 0% | **73%** |
+| **Mọi sai số cùng lúc** | cấp 3 (xấu) | 43% | **100%** |
+| Nhiễu depth | 20 mm | 83% | 80% (như nhau) |
+| Ma sát | μ = 0.1 | 0% | 0% (giới hạn vật lý, nhưng giờ robot **biết** mình làm rơi) |
+| Khối lượng | mọi mức | 100% | 100% |
+
+**Ngân sách sai số mới** (tháp đứng ≥ 95%):
+
+| Nguồn | Trước | Sau |
+|---|---|---|
+| Tay–mắt: vị trí | ≤ 15 mm | **≤ 40 mm** |
+| Tay–mắt: góc | ≤ 1° | **≤ 2°** |
+| Encoder | ≤ 0.5° | **≤ 2°** |
+
+Nói cách khác, bản nâng cấp **dư sức chịu độ rơ của servo giá rẻ** (0.5–1°), và cho phép hiệu chỉnh tay–mắt sơ sài hơn nhiều. Chỉ số "tháp đẹp" cũng tăng mạnh: ở cấp kết hợp 2, từ 43% lên 87%.
+
+**Không cải thiện:**
+- **Nhiễu camera:** việc tìm cốc vẫn dùng chung thuật toán cũ, và đây đang là giới hạn còn lại (bài tập 3).
+- **Ma sát thấp:** là giới hạn vật lý của hiệu ứng nêm. Khác biệt là giờ robot báo đúng lý do (gắp hụt 3 lần) thay vì "tưởng" đã xếp xong.
+
+### 5.2 Những bài học khi làm bản nâng cấp
+
+1. **Camera phải nhìn thấy được thứ cần đo.** Bản đầu, camera ở độ cao 1.1 m không thấy bàn tay khi tay ở trên tháp (ra ngoài khung hình), nên bước chỉnh tay âm thầm bị bỏ qua. Phải dời camera lên 1.25 m.
+2. **Cẳng tay che marker.** Với một số hướng tiếp cận, cẳng tay che mất 1 trong 2 marker. Vì hướng bàn tay đã biết, chỉ cần thấy 1 marker cũng suy ra được tâm tay.
+3. **Chỉnh tay đúng chỗ là chưa đủ, vì tay còn nghiêng.** Encoder lệch làm tay vừa dịch vừa nghiêng (3 khớp gập cùng lệch 1.5° thành nghiêng 4.5°). Marker nằm cao hơn TCP 13 cm, nên căn đúng marker vẫn lệch cốc khoảng 10 mm. Vì vậy phải **hiệu chỉnh mô hình động học**, chứ không chỉ chỉnh từng điểm.
+4. **Đừng đổ mọi sai số cho một nguồn.** Bản tự hiệu chỉnh đầu tiên chỉ ước lượng lệch encoder. Khi camera bị đặt lệch, nó "bịa" ra độ lệch khớp để khớp số đo, làm tay nghiêng, và kết quả **tệ hơn cả bản cũ** (tay–mắt lệch 10 mm: 100% → 63%). Ước lượng đồng thời encoder + camera mới đúng.
+5. **Tham số khó quan sát cần ràng buộc mạnh.** Marker gắn sát cổ tay, nên khớp cổ tay quay một chút thì marker gần như không đổi, nhưng TCP thì dịch nhiều. Dù không có sai số nào, ước lượng vẫn ra cổ tay lệch −1.6°. Phải đặt ràng buộc kéo các khớp cổ tay về 0. Cái giá là: khi cổ tay lệch thật 4°, hệ chỉ bù được một phần (encoder 4°: 73%). Muốn tốt hơn thì gắn marker xa cổ tay hơn.
+6. **Phải đo, không đoán.** Bản nâng cấp đầu tiên "nghe rất hợp lý", nhưng bộ thử độ bền cho thấy nó tệ hơn ở 4 trên 7 nguồn sai số. Không có bộ thử này thì đã gửi đi một bản lỗi.
+
+## 6. Những điều rút ra khi viết bài
 
 1. **Đổi khối lượng xong phải gọi `mj_setConst(m, d)`.** Ở bản đầu, cốc nặng 300 g trở lên làm mô phỏng nổ (NaN), MuJoCo tự reset, và robot trông như "gắp hụt". Thật ra robot không làm gì sai: model đang dùng các hằng số tính cho khối lượng cũ. Script giờ kiểm tra `d.warning[mjWARN_BADQACC]` để tách các lần mô phỏng nổ ra khỏi lỗi của robot (với code đã sửa thì không còn lần nào).
 2. **Chọn tiêu chí đúng câu hỏi.** Tiêu chí "lệch ≤ 8 mm so với toạ độ tuyệt đối" cho ra kết quả bi quan sai lệch (encoder 0.5° → 33%). Tiêu chí "tháp đứng" cho 100%. Cả hai đều có ích, nhưng phải biết mình đang đo cái gì.
 3. **Dùng cùng một bộ seed cho mọi mức** (common random numbers). Nhờ vậy, khác biệt giữa 2 mức đến từ sai số chứ không phải do lần này cốc rải dễ hơn lần kia.
 
-## 6. Bài tập
+## 7. Bài tập
 
-1. **Visual servoing khi đặt:** trước khi thả C3, chụp ảnh, đo vị trí cốc C3 đang cầm so với C1 và C2, rồi dịch tay để bù độ lệch. Sau đó chạy lại `lech_encoder` xem ngưỡng tăng được bao nhiêu.
-2. **Phát hiện rơi cốc:** kiểm tra độ mở ngón sau khi nhấc và trong lúc chở. Nếu cốc tuột thì quay lại gắp. Chạy lại ô `ma_sat_kep`: lý do hỏng có đổi từ `C3_roi` sang `kep_hut_3_lan` không? Có lần nào cứu được không?
+1. ~~**Visual servoing khi đặt:**~~ *(đã làm: mục 5)* trước khi thả C3, chụp ảnh, đo vị trí cốc C3 đang cầm so với C1 và C2, rồi dịch tay để bù độ lệch. Sau đó chạy lại `lech_encoder` xem ngưỡng tăng được bao nhiêu.
+2. ~~**Phát hiện rơi cốc:**~~ *(đã làm: mục 5)* kiểm tra độ mở ngón sau khi nhấc và trong lúc chở. Nếu cốc tuột thì quay lại gắp. Chạy lại ô `ma_sat_kep`: lý do hỏng có đổi từ `C3_roi` sang `kep_hut_3_lan` không? Có lần nào cứu được không?
 3. **Tìm mặt đáy bền hơn:** thay cửa sổ 1 cm trong `tim_coc` bằng RANSAC fit mặt phẳng ngang, hoặc dùng chiều cao cốc đã biết. Chạy lại ô `nhieu_camera`.
 4. **Ngón kẹp tốt hơn:** đổi ngón thành hình nêm nghiêng đúng góc α của cốc. Ranh giới ma sát còn không?
 5. **Nguồn sai số mới:** thêm độ trễ camera (robot dùng ảnh chụp từ 0.3 s trước) và độ rơ (backlash) ở khớp. Viết hàm bơm sai số theo mẫu `lech_encoder`.

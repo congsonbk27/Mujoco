@@ -166,6 +166,19 @@ Hàm "phá" ban đầu dời C3 tới các toạ độ cố định. Có lúc ch
 
 ---
 
+## 5b. Bản nâng cấp (`--nang-cap`)
+
+```bash
+MUJOCO_GL=egl python xep_coc_camera.py --nang-cap
+```
+
+- Gắn 2 marker hồng lên mu bàn tay.
+- **Tự hiệu chỉnh** khi khởi động (`tu_hieu_chinh.py`): ước lượng đồng thời độ lệch encoder và sai số camera.
+- **Chỉnh tay bằng camera** trước khi gắp và trước khi thả.
+- **Phát hiện rơi cốc** sau khi nhấc và khi tới đích.
+
+Nhờ vậy, hệ chịu được encoder lệch tới 2° và hiệu chỉnh tay–mắt sai tới 40 mm / 2° mà tháp vẫn đứng ≥ 95%. Bản cũ chỉ chịu được 0.5° và 15 mm / 1°. Số liệu chi tiết ở [bài thử độ bền](../bai_do_ben/README.md#5-nâng-cấp-và-so-sánh-trước--sau).
+
 ## 6. Chuyển sang RealSense thật
 
 Phần xử lý ảnh (`nhan_dang.py`) giữ nguyên. Chỉ cần thay class `CameraRealSense` bằng một class đọc từ camera thật có cùng giao diện `chup()` và `chieu_nguoc()`:
