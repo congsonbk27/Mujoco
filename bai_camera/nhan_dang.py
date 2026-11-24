@@ -41,6 +41,39 @@ def mat_na_mau(color):
     }
 
 
+KC_MARKER = 0.052   # mỗi marker cách trục bàn tay 5.2 cm theo trục x
+
+
+def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15):
+    """Tìm marker màu hồng (hue ~300 độ) trên mu bàn tay -> xy THẬT của trục bàn tay.
+
+    2 marker nằm 2 bên trục tay, cách trục 5.2 cm theo trục x thế giới (tay luôn kẹp theo trục y
+    nên trục x của tay song song trục x thế giới). Cẳng tay hay che mất 1 marker, nên:
+      - tách các điểm hồng thành cụm theo x (chỗ hở > 3 cm là ranh giới giữa 2 cụm)
+      - mỗi cụm đủ điểm -> suy ra tâm tay = tâm cụm ∓ 5.2 cm (dấu theo cụm nằm bên nào so với
+        vị trí tay ƯỚC LƯỢNG; sai số ước lượng vài mm << 5.2 cm nên không thể nhầm bên)
+      - thấy 2 cụm thì lấy trung bình 2 kết quả.
+    Trả về None nếu không thấy marker nào.
+    """
+    h, s, v = hsv(color)
+    mask = (s > 0.35) & (v > 0.12) & (h > 280) & (h < 325) & (depth > 0)
+    vv, uu = np.nonzero(mask)
+    if len(uu) < so_diem_toi_thieu:
+        return None
+    p = cam.chieu_nguoc(uu, vv, depth[vv, uu])
+    p = p[np.argsort(p[:, 0])]
+    cat = np.nonzero(np.diff(p[:, 0]) > 0.03)[0]
+    cum = np.split(p, cat + 1)
+    tam = []
+    for c in cum:
+        if len(c) < so_diem_toi_thieu:
+            continue
+        xy = np.median(c[:, :2], axis=0)
+        dau = 1.0 if xy[0] > xy_uoc_luong[0] else -1.0
+        tam.append(xy - [dau * KC_MARKER, 0.0])
+    return np.mean(tam, axis=0) if tam else None
+
+
 def tim_coc(cam, color, depth, so_diem_toi_thieu=40):
     """Trả về dict: tên cốc -> {'goc': vị trí gốc cốc (tâm vành miệng) [x,y,z], 'so_diem': n, 'uv': (u,v)}.
     Cốc không thấy (bị che / ngoài khung hình) sẽ không có trong dict."""

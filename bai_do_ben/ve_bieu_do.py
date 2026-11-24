@@ -32,10 +32,10 @@ MUC_CHINH, MUC_PHU, MUC_MO = "#0b0b0b", "#52514e", "#898781"
 LUOI, TRUC, NEN = "#e1e0d9", "#c3c2b7", "#fcfcfb"
 
 
-def doc():
+def doc(ten_file="ket_qua.csv"):
     bang = defaultdict(lambda: defaultdict(list))
     thu_tu = defaultdict(list)
-    for r in csv.DictReader(open(THU_MUC / "ket_qua.csv")):
+    for r in csv.DictReader(open(THU_MUC / ten_file)):
         muc = float(r["muc"])
         if muc not in thu_tu[r["nguon"]]:
             thu_tu[r["nguon"]].append(muc)
@@ -106,5 +106,48 @@ def main():
     print("Đã lưu", THU_MUC / "do_ben.png")
 
 
+def so_sanh():
+    """Biểu đồ trước / sau nâng cấp: tỉ lệ tháp đứng vững (ket_qua.csv vs ket_qua_nang_cap.csv)."""
+    cu, thu_tu = doc("ket_qua.csv")
+    moi, _ = doc("ket_qua_nang_cap.csv")
+    fig, axs = plt.subplots(2, 4, figsize=(13, 6.4), facecolor=NEN)
+    for ax, (ten, tieu_de, don_vi) in zip(axs.flat, O):
+        cac_muc = thu_tu[ten]
+        x = range(len(cac_muc))
+        ti_le = lambda b: [100 * sum(a for a, _ in b[ten][m]) / len(b[ten][m]) for m in cac_muc]  # noqa
+        ax.set_facecolor(NEN)
+        ax.axhspan(95, 100, color=XANH, alpha=0.07, lw=0)
+        ax.plot(x, ti_le(cu), color=XANH, lw=2, marker="o", ms=6, mec=NEN, mew=1.5, label="Trước (bài camera)")
+        ax.plot(x, ti_le(moi), color=CAM, lw=2, ls=(0, (4, 2)), marker="s", ms=5.5, mec=NEN, mew=1.5,
+                label="Sau nâng cấp")
+        ax.set_xticks(list(x), [nhan(m) for m in cac_muc])
+        ax.set_ylim(-4, 104)
+        ax.set_yticks([0, 25, 50, 75, 100], ["0", "25", "50", "75", "100%"])
+        ax.grid(axis="y", color=LUOI, lw=0.8)
+        ax.set_axisbelow(True)
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
+        ax.tick_params(length=0)
+        ax.set_title(tieu_de, loc="left", fontsize=10, fontweight="bold", color=MUC_CHINH)
+        ax.set_xlabel(don_vi, fontsize=8.5)
+    leg = axs.flat[-1]
+    leg.axis("off")
+    h, lbl = axs.flat[0].get_legend_handles_labels()
+    leg.legend(h, lbl, loc="center left", frameon=False, fontsize=9.5, handlelength=3)
+    n = len(cu[O[0][0]][thu_tu[O[0][0]][0]])
+    leg.text(0.02, 0.22, f"Tỉ lệ tháp đứng vững. {n} lần/mức,\ncùng bộ seed cho cả 2 phiên bản.\n"
+             "Nâng cấp = tự hiệu chỉnh encoder\n+ chỉnh tay bằng camera + phát hiện rơi cốc",
+             transform=leg.transAxes, fontsize=8, color=MUC_MO, va="top")
+    fig.suptitle("Trước và sau nâng cấp: tỉ lệ tháp đứng vững khi tăng từng nguồn sai số",
+                 x=0.01, ha="left", fontsize=12.5, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=2.2, w_pad=1.8)
+    fig.savefig(THU_MUC / "so_sanh.png", dpi=150, facecolor=NEN)
+    print("Đã lưu", THU_MUC / "so_sanh.png")
+
+
 if __name__ == "__main__":
+    plt.rcParams.update({"font.size": 9, "axes.edgecolor": TRUC, "axes.labelcolor": MUC_PHU,
+                         "xtick.color": MUC_MO, "ytick.color": MUC_MO, "text.color": MUC_CHINH})
     main()
+    if (THU_MUC / "ket_qua_nang_cap.csv").exists():
+        so_sanh()

@@ -140,7 +140,7 @@ NGUON = [
 # ---------------------------------------------------------------------------
 def mot_lan(viec):
     """Chạy 1 lần; trả về dict kết quả. Chạy trong process con."""
-    ten, muc, seed = viec
+    ten, muc, seed, nang_cap = viec
     import xep_coc_camera as X
     ham = dict((n[0], n[1]) for n in NGUON)[ten]
     rng = np.random.default_rng(10_000 + seed)        # sai số ngẫu nhiên theo seed, tái lập được
@@ -155,7 +155,7 @@ def mot_lan(viec):
 
     try:
         with contextlib.redirect_stdout(out):
-            X.chay(seed=seed, tuy_chinh=tuy_chinh)
+            X.chay(seed=seed, tuy_chinh=tuy_chinh, nang_cap=nang_cap)
         log = out.getvalue()
         ok, ly_do, chi_so = danh_gia_thap(log)
         # Mô phỏng nổ (NaN) -> MuJoCo tự reset: kết quả vô nghĩa, tách riêng khỏi lỗi của robot
@@ -208,10 +208,12 @@ def main():
     ap.add_argument("--nhanh", action="store_true")
     ap.add_argument("--so-lan", type=int, default=30)
     ap.add_argument("--nhan", type=int, default=mp.cpu_count())
+    ap.add_argument("--nang-cap", action="store_true",
+                    help="bản nâng cấp: tự hiệu chỉnh + visual servoing + phát hiện rơi cốc")
     a = ap.parse_args()
     n = 6 if a.nhanh else a.so_lan
 
-    viec = [(ten, muc, seed) for ten, _, _, cac_muc, _ in NGUON for muc in cac_muc
+    viec = [(ten, muc, seed, a.nang_cap) for ten, _, _, cac_muc, _ in NGUON for muc in cac_muc
             for seed in range(1, n + 1)]
     print(f"{len(viec)} lần chạy trên {a.nhan} nhân...")
     t0 = time.time()
@@ -223,7 +225,8 @@ def main():
                 print(f"  {i}/{len(viec)}  ({time.time() - t0:.0f} s)", flush=True)
 
     ket_qua.sort(key=lambda r: ([x[0] for x in NGUON].index(r["nguon"]), r["muc"], r["seed"]))
-    with open(THU_MUC / "ket_qua.csv", "w", newline="") as f:
+    ten_file = "ket_qua_nang_cap.csv" if a.nang_cap else "ket_qua.csv"
+    with open(THU_MUC / ten_file, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(ket_qua[0]))
         w.writeheader()
         w.writerows(ket_qua)
