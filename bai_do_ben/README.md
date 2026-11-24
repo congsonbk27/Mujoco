@@ -221,3 +221,9 @@ Nói cách khác, bản nâng cấp **dư sức chịu độ rơ của servo gi�
 4. **Ngón kẹp tốt hơn:** đổi ngón thành hình nêm nghiêng đúng góc α của cốc. Ranh giới ma sát còn không?
 5. **Nguồn sai số mới:** thêm độ trễ camera (robot dùng ảnh chụp từ 0.3 s trước) và độ rơ (backlash) ở khớp. Viết hàm bơm sai số theo mẫu `lech_encoder`.
 6. **Thống kê:** mỗi mức hiện chỉ có 30 lần chạy. Hãy tính khoảng tin cậy 95% (Wilson) cho mỗi điểm và vẽ thành dải mờ quanh đường. Mức nào cần chạy thêm?
+
+## 8. Kết quả với cánh tay 6DOF
+
+`ket_qua.csv`, `ket_qua_nang_cap.csv` và các biểu đồ hiện tại là dữ liệu **6DOF**. Dữ liệu 5DOF giữ trong `ket_qua_5dof.csv`, `ket_qua_nang_cap_5dof.csv`. So sánh: `so_sanh_5dof_6dof.png`.
+
+Bản nâng cấp 6DOF bằng 5DOF ở hầu hết các ô, **kém hơn** ở lệch encoder lớn (2°: 93 so với 100%, 3°: 80 so với 93%, 4°: 43 so với 73%) và nhiễu camera 20 mm (67 so với 80%). Nguyên nhân cần tìm: tự hiệu chỉnh có thêm 1 khớp phải ước lượng.
