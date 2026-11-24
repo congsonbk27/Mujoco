@@ -21,6 +21,7 @@ import numpy as np
 from nhan_dang import hsv
 
 LAM_CANG_TAY = 0.3
+LAM_GAP_CO_TAY = 0.02   # gập cổ tay: đo được nhờ tư thế xoay tay 90° -> không cần ép mạnh
 TEN_MARKER = ["marker_trai", "marker_phai"]
 
 
@@ -68,8 +69,12 @@ class TuHieuChinh:
     def thu_mau(self, cac_dich):
         """Đưa tay tới từng điểm (TCP, tay chúc xuống), chụp ảnh, ghi lại marker đo được."""
         rb = self.robot
-        for p in cac_dich:
-            q = rb.giai_ik_moi(p)
+        for i, p in enumerate(cac_dich):
+            # Xen kẽ 2 hướng bàn tay. Hướng thường: 2 marker nằm dọc trục khớp gập cổ tay -> khớp này
+            # lệch thì marker gần như không đổi (không đo được). Hướng xoay 90°: 2 marker nằm dọc cánh
+            # tay, gập cổ tay lệch 4° làm 2 marker chênh cao ~7 mm -> đo được.
+            y = (0.0, 1.0, 0.0) if i % 2 == 0 else (np.cos(np.arctan2(p[1], p[0])), np.sin(np.arctan2(p[1], p[0])), 0.0)
+            q = rb.giai_ik_moi(p, y)
             rb.toi_khop(q, T=1.0)
             rb.buoc(75)
             self.cam.cap_nhat_ngoai(rb.d)
@@ -108,6 +113,7 @@ class TuHieuChinh:
         # các khớp cổ tay (xoay cẳng tay, gập cổ tay, xoay tay): 3 khớp cuối trong KHOP_TAY
         lam_vec[3:n_d] = lam_co_tay
         lam_vec[3] = lam_cang_tay
+        lam_vec[4] = LAM_GAP_CO_TAY
 
         def tach(t):
             return t[:n_d], ma_tran_xoay_nho(t[n_d], t[n_d + 1]), t[n_d + 2:]

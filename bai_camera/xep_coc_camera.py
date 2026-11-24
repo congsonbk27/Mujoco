@@ -137,10 +137,16 @@ class RoBot:
         self.p = self.ik.d.site_xpos[self.tcp].copy()
         self.y = self.ik.d.site_xmat[self.tcp].reshape(3, 3)[:, 1].copy()
 
-    def giai_ik_moi(self, p_dich):
-        """Giải IK từ một điểm khởi đầu 'hợp lý': đế quay về phía đích, tay gập vừa phải."""
-        q0 = np.array([np.arctan2(p_dich[1], p_dich[0]), 0.3, 1.0, 0.0, 1.84, 0.0])
-        q, sai = self.ik.giai(q0, np.asarray(p_dich, float), np.array([0.0, 1.0, 0.0]), so_vong=500)
+    def giai_ik_moi(self, p_dich, y_dich=(0.0, 1.0, 0.0)):
+        """Giải IK từ một điểm khởi đầu 'hợp lý': đế quay về phía đích, tay gập vừa phải.
+        y_dich: hướng trục y của bàn tay (hướng 2 ngón kẹp) trong hệ thế giới."""
+        y_dich = np.asarray(y_dich, float)
+        de = np.arctan2(p_dich[1], p_dich[0])
+        # xoay tay khởi đầu: góc giữa y_dich và trục y "tự nhiên" của tay khi đế quay góc de
+        xoay = np.arctan2(y_dich[1], y_dich[0]) - (de + np.pi / 2)
+        xoay = (xoay + np.pi) % (2 * np.pi) - np.pi
+        q0 = np.array([de, 0.3, 1.0, 0.0, 1.84, xoay])
+        q, sai = self.ik.giai(q0, np.asarray(p_dich, float), y_dich, so_vong=500)
         assert sai < 1e-3, f"IK không hội tụ tới {p_dich} (sai {sai:.4f} m)"
         return q
 
