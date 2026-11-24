@@ -29,8 +29,9 @@ from gap_do import KHOP_TAY, GiaiIK, muot, nlerp  # noqa: E402
 from xep_coc import (CAO, NGON_DONG, NGON_MO, TEN_COC, THA_CAO, Z_DI, Z_KEP,  # noqa: E402
                      vi_tri_kim_tu_thap)
 
-from nhan_dang import tim_coc  # noqa: E402
+from nhan_dang import tim_coc, tim_marker  # noqa: E402
 from realsense import CameraRealSense  # noqa: E402
+from tu_hieu_chinh import tu_hieu_chinh  # noqa: E402
 
 XML_GOC = THU_MUC.parent / "bai_xep_coc" / "xep_coc.xml"
 # Tư thế "đứng chờ" (góc khớp): tay dựng gần thẳng đứng -> nhìn từ camera trên cao, tay chỉ chiếm
@@ -40,12 +41,25 @@ NGUONG_KEP_HUT = 0.01                    # ngón đóng < 1 cm -> giữa 2 ngón
 SO_LAN_THU = 3
 
 
-def tao_model():
-    """Lấy model của bài xep_coc và GẮN THÊM camera bằng MjSpec (không phải chép lại file XML)."""
+def tao_model(nang_cap=False):
+    """Lấy model của bài xep_coc và GẮN THÊM camera bằng MjSpec (không phải chép lại file XML).
+    nang_cap=True: gắn thêm 2 marker màu hồng lên mu bàn tay để camera đo vị trí thật của tay."""
     spec = mujoco.MjSpec.from_file(str(XML_GOC))
-    # Camera treo trên cao 1.1 m, nhìn thẳng xuống (camera MuJoCo mặc định nhìn theo -z).
+    if nang_cap:
+        tay = spec.body("ban_tay")
+        for dau in (-1, 1):
+            # "Tai" nhô ra 2 bên mu bàn tay (theo trục x của tay), ra ngoài bóng của khớp cổ tay
+            # để camera trên cao luôn nhìn thấy. Chỉ để nhìn (không va chạm).
+            tay.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.02, 0.012, 0.004],
+                         pos=[dau * 0.05, 0, 0.004], rgba=[0.4, 0.4, 0.45, 1], contype=0, conaffinity=0)
+            tay.add_geom(name=f"marker{'_trai' if dau < 0 else '_phai'}", type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+                         size=[0.011, 0.0015], pos=[dau * 0.052, 0, -0.0015],
+                         rgba=[0.95, 0.1, 0.85, 1], contype=0, conaffinity=0)
+    # Camera treo trên cao 1.25 m, nhìn thẳng xuống (camera MuJoCo mặc định nhìn theo -z).
+    # Đặt lệch về phía tháp (y = 0.05) và đủ cao để khi tay cầm cốc ở trên tháp (cao ~0.43 m)
+    # bàn tay vẫn nằm trong khung hình (cần cho bước visual servoing).
     # fovy 58 độ ~ góc nhìn dọc của RealSense D435.
-    than = spec.worldbody.add_body(name="gia_camera", pos=[0.25, 0.0, 1.1])
+    than = spec.worldbody.add_body(name="gia_camera", pos=[0.25, 0.05, 1.25])
     than.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.045, 0.0125, 0.0125],
                   rgba=[0.15, 0.15, 0.15, 1], contype=0, conaffinity=0)
     than.add_camera(name="realsense", pos=[0, 0, -0.015], fovy=58)
@@ -71,6 +85,8 @@ class RoBot:
         self.cam_xem.lookat[:] = [0.2, 0.05, 0.15]
         self.cam_xem.distance, self.cam_xem.azimuth, self.cam_xem.elevation = 1.45, -105, -28
         self.su_kien = []   # (thời điểm, hàm) - dùng để "phá" giữa chừng
+        # Độ lệch điểm 0 encoder ước lượng được (tự hiệu chỉnh). Muốn khớp đứng ở q -> ra lệnh q - bu.
+        self.bu = np.zeros(len(KHOP_TAY))
 
     def buoc(self, n):
         for _ in range(n):
@@ -97,7 +113,7 @@ class RoBot:
         for i in range(0, n, bdk):
             s = muot((i + bdk) / n)
             self.q, _ = self.ik.giai(self.q, (1 - s) * self.p + s * p_dich, nlerp(self.y, y, s))
-            self.d.ctrl[self.act_tay] = self.q
+            self.d.ctrl[self.act_tay] = self.q - self.bu
             self.d.ctrl[self.act_ngon] = (1 - s) * self.ngon + s * ngon
             self.buoc(bdk)
         self.p, self.y, self.ngon = np.array(p_dich, float), y, ngon
@@ -111,7 +127,7 @@ class RoBot:
         n, bdk = int(T / self.m.opt.timestep), 10
         for i in range(0, n, bdk):
             s = muot((i + bdk) / n)
-            self.d.ctrl[self.act_tay] = (1 - s) * q0 + s * q_dich
+            self.d.ctrl[self.act_tay] = (1 - s) * q0 + s * q_dich - self.bu
             self.d.ctrl[self.act_ngon] = (1 - s) * self.ngon + s * ngon
             self.buoc(bdk)
         self.q, self.ngon = np.array(q_dich, float), ngon
@@ -144,10 +160,15 @@ def nhin(robot, cam, ghi_anh=None):
     return thay
 
 
-def gap(robot, p_coc):
-    """Gắp cốc có gốc ở p_coc. Trả về True nếu kẹp được (kiểm tra bằng độ mở ngón)."""
+def gap(robot, p_coc, nang_cap=False, cam=None):
+    """Gắp cốc có gốc ở p_coc. Trả về True nếu kẹp được (kiểm tra bằng độ mở ngón).
+    nang_cap=True: kiểm tra thêm SAU KHI NHẤC (cốc có thể tuột khi nhấc, ví dụ do ma sát thấp)."""
     x, y, z = p_coc
     robot.toi_khop(robot.giai_ik_moi([x, y, Z_DI]), NGON_MO, T=1.5)
+    if nang_cap:
+        # Chỉnh tay đúng tâm cốc TRƯỚC khi hạ xuống: nếu tay lệch theo trục x (dọc mặt ngón),
+        # 2 ngón không tự kéo cốc vào giữa -> cốc nằm lệch trong kẹp -> đặt cũng lệch theo.
+        x, y = chinh_tay(robot, cam, [x, y], NGON_MO)
     robot.toi([x, y, z + Z_KEP], NGON_MO, T=1.2)
     robot.toi([x, y, z + Z_KEP], NGON_DONG, T=0.6)
     mo = robot.do_mo_ngon()
@@ -157,20 +178,79 @@ def gap(robot, p_coc):
         robot.toi([x, y, Z_DI], NGON_MO, T=1.0)
         return False
     robot.toi([x, y, Z_DI], NGON_DONG, T=1.2)
+    if nang_cap and con_coc(robot) is False:
+        print("    ! cốc tuột khi nhấc lên -> mở kẹp, nhìn lại")
+        robot.toi([x, y, Z_DI], NGON_MO, T=0.5)
+        return False
     return True
 
 
-def dat(robot, p_dat):
+def con_coc(robot):
+    """Giữa 2 ngón còn cốc không? (ngón đang ra lệnh đóng mà mở > ngưỡng -> có vật chặn)"""
+    return robot.do_mo_ngon() >= NGUONG_KEP_HUT
+
+
+SAI_SO_CHO_PHEP = 0.0015   # chỉnh tay tới khi lệch < 1.5 mm
+SO_LAN_CHINH = 3
+
+
+def do_vi_tri_tay(robot, cam):
+    """Chụp ảnh, tìm 2 marker trên mu bàn tay -> vị trí xy THẬT của trục bàn tay (= xy của TCP
+    khi tay chúc thẳng xuống). Trả về None nếu không thấy đủ 2 marker."""
+    cam.cap_nhat_ngoai(robot.d)
+    color, depth = cam.chup(robot.d)
+    return tim_marker(cam, color, depth, robot.p[:2])
+
+
+def chinh_tay(robot, cam, xy_muon, ngon):
+    """VISUAL SERVOING: đang lơ lửng ở độ cao Z_DI, dùng camera đo vị trí THẬT của bàn tay
+    (2 marker) rồi dịch tay tới khi trục tay trùng xy_muon (lệch < 1.5 mm).
+    Trả về xy cần RA LỆNH (khác xy_muon đúng bằng sai số động học/encoder tại chỗ đó)."""
+    lenh = np.array(xy_muon[:2], float)
+    for k in range(SO_LAN_CHINH):
+        robot.buoc(50)                        # chờ tay hết rung rồi mới chụp
+        xy_that = do_vi_tri_tay(robot, cam)
+        if xy_that is None:
+            print("    (không thấy marker, bỏ qua bước chỉnh)")
+            break
+        lech = np.array(xy_muon[:2]) - xy_that
+        print(f"    chỉnh lần {k+1}: tay lệch {np.linalg.norm(lech)*1000:.1f} mm")
+        if np.linalg.norm(lech) < SAI_SO_CHO_PHEP:
+            break
+        lenh = lenh + lech
+        robot.toi([lenh[0], lenh[1], Z_DI], ngon, T=0.6)
+    return lenh
+
+
+def dat(robot, p_dat, cam=None, nang_cap=False):
+    """Đặt cốc đang cầm xuống p_dat. Trả về False nếu phát hiện cốc đã rơi trên đường đi.
+
+    nang_cap=True:
+      - kiểm tra còn cốc trong kẹp khi tới trên đích
+      - VISUAL SERVOING: camera đo vị trí thật của bàn tay (qua 2 marker), so với đích, dịch tay
+        bù độ lệch; lặp tới khi lệch < 1.5 mm. Sai số encoder, sai số động học... đều bị bù.
+        Vì đích (đo C1, C2) và tay đều đo bằng CÙNG một camera, sai số hiệu chỉnh tay-mắt
+        cũng gần như triệt tiêu khi đặt C3 lên C1, C2.
+    """
     x, y, z = p_dat
     robot.toi([x, y, Z_DI], NGON_DONG, T=2.0)
-    robot.toi([x, y, z + Z_KEP + THA_CAO], NGON_DONG, T=1.8)
-    robot.toi([x, y, z + Z_KEP + THA_CAO], NGON_MO, T=0.6)
-    robot.toi([x, y, Z_DI], NGON_MO, T=1.2)
+    lenh = np.array([x, y])                   # vị trí RA LỆNH (có thể khác vị trí muốn tới)
+    if nang_cap:
+        if not con_coc(robot):
+            print("    ! cốc đã rơi trên đường chở -> quay lại tìm")
+            robot.toi([x, y, Z_DI], NGON_MO, T=0.5)
+            return False
+        lenh = chinh_tay(robot, cam, [x, y], NGON_DONG)
+    robot.toi([lenh[0], lenh[1], z + Z_KEP + THA_CAO], NGON_DONG, T=1.8)
+    robot.toi([lenh[0], lenh[1], z + Z_KEP + THA_CAO], NGON_MO, T=0.6)
+    robot.toi([lenh[0], lenh[1], Z_DI], NGON_MO, T=1.2)
+    return True
 
 
-def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None):
-    """tuy_chinh(m, d, cam): hàm tuỳ chọn, gọi trước khi chạy để bơm sai số (xem bai_do_ben)."""
-    m = tao_model()
+def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None, nang_cap=False):
+    """tuy_chinh(m, d, cam): hàm tuỳ chọn, gọi trước khi chạy để bơm sai số (xem bai_do_ben).
+    nang_cap: bật phát hiện rơi cốc + visual servoing khi đặt (xem README, mục Nâng cấp)."""
+    m = tao_model(nang_cap)
     d = mujoco.MjData(m)
     mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
     qadr = {c: m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC}
@@ -195,6 +275,13 @@ def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None):
     if tuy_chinh is not None:
         tuy_chinh(m, d, cam)
     anh = []
+    if nang_cap:
+        delta, rms, n = tu_hieu_chinh(robot, cam)
+        if delta is None:
+            print(f"Tự hiệu chỉnh: chỉ thu được {n} mẫu marker, bỏ qua")
+        else:
+            print(f"Tự hiệu chỉnh ({n} mẫu): lệch encoder ước lượng = {np.round(np.degrees(delta), 2)} độ, "
+                  f"sai số còn lại (rms x,y,z) = {np.round(rms * 1000, 1)} mm")
 
     def cho_trong(ten, goi_y):
         """Chọn chỗ đầu tiên trong goi_y cách mọi cốc khác >= 14 cm (không đặt cốc chồng lấn cốc)."""
@@ -236,26 +323,26 @@ def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None):
                          if 0.27 < np.linalg.norm(p_that[:2] + 0.12 * np.array([np.cos(a), np.sin(a)])) < 0.52]
                 robot.su_kien.append((d.time + 2.0, lambda g=goi_y: doi_coc(
                     "coc3", cho_trong("coc3", g), "tay đang hạ xuống")))
-            if gap(robot, p_coc):
+            if not gap(robot, p_coc, nang_cap, cam):
+                continue
+            if pha and ten == "coc1" and lan == 1:
+                # Phá kiểu 1: khi tay đang chở C1, có người dời C3 sang chỗ khác
+                # mọi chỗ gợi ý đều cách đế 0.3-0.46 m: trong tầm với của tay ở độ cao di chuyển
+                goi_y = [[0.22, -0.30], [0.25, -0.38], [0.42, -0.18], [0.35, 0.0], [0.12, -0.36]]
+                robot.su_kien.append((d.time + 1.0, lambda: doi_coc(
+                    "coc3", cho_trong("coc3", goi_y), "tay đang chở C1")))
+
+            p_dat = dich[i]
+            if ten == "coc3" and "coc1" in thay and "coc2" in thay:
+                # Vòng kín: đặt C3 vào giữa vị trí THỰC của C1, C2 (đo trong ảnh vừa chụp trước khi
+                # gắp C3) chứ không phải vị trí dự kiến.
+                p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
+                print(f"  camera đo C1, C2 -> đặt C3 tại {np.round(p_dat, 3)} (dự kiến {np.round(dich[2], 3)})")
+            if dat(robot, p_dat, cam, nang_cap):
                 break
         else:
             print("  Gắp thất bại quá số lần thử")
             return False
-
-        if pha and ten == "coc1":
-            # Phá kiểu 1: khi tay đang chở C1, có người dời C3 sang chỗ khác
-            # mọi chỗ gợi ý đều cách đế 0.3-0.46 m: trong tầm với của tay ở độ cao di chuyển
-            goi_y = [[0.22, -0.30], [0.25, -0.38], [0.42, -0.18], [0.35, 0.0], [0.12, -0.36]]
-            robot.su_kien.append((d.time + 1.0, lambda: doi_coc(
-                "coc3", cho_trong("coc3", goi_y), "tay đang chở C1")))
-
-        p_dat = dich[i]
-        if ten == "coc3" and "coc1" in thay and "coc2" in thay:
-            # Vòng kín: đặt C3 vào giữa vị trí THỰC của C1, C2 (đo trong ảnh vừa chụp trước khi gắp C3)
-            # chứ không phải vị trí dự kiến.
-            p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
-            print(f"  camera đo C1, C2 -> đặt C3 tại {np.round(p_dat, 3)} (dự kiến {np.round(dich[2], 3)})")
-        dat(robot, p_dat)
 
     robot.toi_khop(Q_CHO, T=1.5)
     print("\nChờ 2 s kiểm tra độ vững...")
@@ -335,5 +422,6 @@ if __name__ == "__main__":
     ap.add_argument("--gif", action="store_true")
     ap.add_argument("--pha", action="store_true", help="dời cốc khi tay đang làm")
     ap.add_argument("--ngau-nhien", type=int, metavar="SEED")
+    ap.add_argument("--nang-cap", action="store_true", help="phát hiện rơi cốc + visual servoing khi đặt")
     a = ap.parse_args()
-    raise SystemExit(0 if chay(a.xem, a.gif, a.ngau_nhien, a.pha) else 1)
+    raise SystemExit(0 if chay(a.xem, a.gif, a.ngau_nhien, a.pha, nang_cap=a.nang_cap) else 1)
