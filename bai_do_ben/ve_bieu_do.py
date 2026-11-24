@@ -17,11 +17,11 @@ THU_MUC = pathlib.Path(__file__).parent
 
 # (tên trong csv, tiêu đề ô, nhãn trục x)
 O = [
-    ("nhieu_camera", "Nhiễu depth của camera", "σ ở 1 m (mm)"),
+    ("nhieu_camera", "Nhiễu depth của camera", "mm (σ ở 1 m)"),
     ("tay_mat_dich", "Hiệu chỉnh tay–mắt: lệch vị trí", "mm"),
     ("tay_mat_xoay", "Hiệu chỉnh tay–mắt: lệch góc", "độ"),
     ("lech_encoder", "Lệch 0 encoder mỗi khớp", "độ"),
-    ("ma_sat_kep", "Ma sát ngón–cốc (giảm dần)", "hệ số μ"),
+    ("ma_sat_kep", "Ma sát ngón–cốc", "hệ số μ"),
     ("khoi_luong", "Khối lượng mỗi cốc", "gam"),
     ("ket_hop", "Mọi sai số cùng lúc", "1 = tốt · 2 = thường · 3 = xấu"),
 ]
@@ -74,22 +74,30 @@ def main():
         ax.tick_params(length=0)
         ax.set_title(tieu_de, loc="left", fontsize=10, fontweight="bold", color=MUC_CHINH)
         ax.set_xlabel(don_vi, fontsize=8.5)
-        # Ghi nhãn trực tiếp: mức lớn nhất mà tháp vẫn đứng >= 95%
-        # (tính từ mức đầu tới khi lần đầu tụt dưới 95%)
-        i = -1
-        while i + 1 < len(dung) and dung[i + 1] >= 95:
-            i += 1
-        if i >= 0 and ten != "ket_hop":
-            ax.annotate(f"≥95% tới {nhan(cac_muc[i])}", (i, dung[i]), xytext=(0, -16),
-                        textcoords="offset points", ha="center", fontsize=8, color=MUC_PHU)
-        ax.text(1, 1.02, f"{n} lần/mức", transform=ax.transAxes, ha="right", fontsize=7.5, color=MUC_MO)
+        # Ghi nhãn ngưỡng an toàn: vùng các mức mà tháp đứng >= 95%
+        if ten != "ket_hop":
+            tot = [v >= 95 for v in dung]
+            if ten == "ma_sat_kep":      # ma sát: càng LỚN càng tốt -> tìm mức nhỏ nhất mà từ đó trở lên đều tốt
+                i = len(tot)
+                while i > 0 and tot[i - 1]:
+                    i -= 1
+                txt = f"đứng ≥95% khi μ ≥ {nhan(cac_muc[i])}" if i < len(tot) else ""
+            else:                        # còn lại: càng NHỎ càng tốt
+                i = 0
+                while i < len(tot) and tot[i]:
+                    i += 1
+                txt = (f"đứng ≥95% tới {nhan(cac_muc[i-1])} {don_vi.split(' ')[0]}"
+                       if 0 < i < len(tot) else ("đứng ≥95% ở mọi mức" if i == len(tot) else ""))
+            ax.text(0.03 if ten != "ma_sat_kep" else 0.97, 0.06, txt, transform=ax.transAxes,
+                    ha="left" if ten != "ma_sat_kep" else "right", fontsize=8.5, color=MUC_PHU,
+                    bbox=dict(boxstyle="round,pad=0.25", fc=NEN, ec="none"))
 
     # ô cuối: chú giải
     leg = axs.flat[-1]
     leg.axis("off")
     h, lbl = axs.flat[0].get_legend_handles_labels()
     leg.legend(h, lbl, loc="center left", frameon=False, fontsize=9.5, handlelength=3)
-    leg.text(0.02, 0.18, "Nền xanh nhạt: vùng ≥ 95%\nCốc rải ngẫu nhiên, cùng bộ seed cho mọi mức",
+    leg.text(0.02, 0.18, f"Nền xanh nhạt: vùng ≥ 95%\n{n} lần chạy mỗi mức, cốc rải ngẫu nhiên,\ncùng bộ seed cho mọi mức",
              transform=leg.transAxes, fontsize=8, color=MUC_MO, va="top")
     fig.suptitle("Độ bền hệ thống xếp cốc bằng camera: tỉ lệ thành công khi tăng từng nguồn sai số",
                  x=0.01, ha="left", fontsize=12.5, fontweight="bold")
