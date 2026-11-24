@@ -95,7 +95,7 @@ class TuHieuChinh:
         Nếu chỉ ước lượng δ, mọi sai số của camera bị "đổ" hết cho encoder -> δ sai -> tay nghiêng.
         lam: regularization (Tikhonov) kéo tham số về 0 khi dữ liệu không đủ để xác định
         (đơn vị chuẩn hoá: 1 rad ~ 1 m ~ 1).
-        lam_co_tay: regularization MẠNH hơn cho 2 khớp cổ tay (co_tay, xoay_tay). Marker gắn sát cổ
+        lam_co_tay: regularization MẠNH hơn cho các khớp cổ tay (xoay_cang_tay, co_tay, xoay_tay). Marker gắn sát cổ
         tay (~4 cm từ trục khớp) nên cổ tay quay một chút marker gần như không đổi -> khó đo; nhưng
         TCP cách trục ~18 cm -> ước lượng sai một chút là tay nghiêng. Đo được: không có sai số nào
         mà vẫn ước lượng cổ tay lệch -1..-1.6 độ -> tay nghiêng, cốc đổ khi camera nhiễu."""
@@ -104,7 +104,8 @@ class TuHieuChinh:
         th = np.zeros(n_d + 5)
         eps = 1e-6
         lam_vec = np.full(len(th), lam)
-        lam_vec[3:5] = lam_co_tay           # 2 khớp cổ tay (thứ tự KHOP_TAY: đế, vai, khuỷu, cổ tay, xoay tay)
+        # các khớp cổ tay (xoay cẳng tay, gập cổ tay, xoay tay): 3 khớp cuối trong KHOP_TAY
+        lam_vec[3:n_d] = lam_co_tay
 
         def tach(t):
             return t[:n_d], ma_tran_xoay_nho(t[n_d], t[n_d + 1]), t[n_d + 2:]

@@ -24,8 +24,9 @@ import numpy as np
 THU_MUC = pathlib.Path(__file__).parent
 MODEL_XML = THU_MUC / "canh_tay.xml"
 
-# 5 khớp của cánh tay tham gia IK (không tính 2 ngón kẹp)
-KHOP_TAY = ["xoay_de", "vai", "khuyu", "co_tay", "xoay_tay"]
+# 6 khớp của cánh tay tham gia IK (không tính 2 ngón kẹp).
+# Bản 6DOF thêm "xoay_cang_tay": cùng co_tay, xoay_tay tạo thành cổ tay cầu.
+KHOP_TAY = ["xoay_de", "vai", "khuyu", "xoay_cang_tay", "co_tay", "xoay_tay"]
 NGON_MO = 0.04    # độ mở mỗi ngón (m)
 NGON_DONG = 0.0   # lệnh đóng: ngón bị vật chặn lại, lực kẹp bị giới hạn bởi forcerange
 

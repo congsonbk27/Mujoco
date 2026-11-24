@@ -81,9 +81,16 @@
 
           <body name="tay_duoi" pos="0 0 0.3" gravcomp="1">
             <joint name="khuyu" axis="0 1 0" range="-2.7 2.7"/>
-            <geom type="capsule" fromto="0 0 0  0 0 0.3" size="0.03"/>
+            <geom type="capsule" fromto="0 0 0  0 0 0.15" size="0.03"/>
 
-            <body name="co_tay" pos="0 0 0.3" gravcomp="1">
+            <!-- 6DOF: khớp XOAY CẲNG TAY (quanh trục cẳng tay). Cùng với co_tay và xoay_tay tạo thành
+                 "cổ tay cầu": 3 trục cắt nhau -> bàn tay đạt mọi hướng. -->
+            <body name="cang_tay" pos="0 0 0.15" gravcomp="1">
+              <joint name="xoay_cang_tay" axis="0 0 1" range="-3.1 3.1"/>
+              <geom type="cylinder" size="0.036 0.01" rgba=".35 .4 .5 1"/>
+              <geom type="capsule" fromto="0 0 0  0 0 0.15" size="0.028"/>
+
+            <body name="co_tay" pos="0 0 0.15" gravcomp="1">
               <joint name="co_tay" axis="0 1 0" range="-2.2 2.2"/>
               <geom type="sphere" size="0.035"/>
 
@@ -104,6 +111,7 @@
                 </body>
               </body>
             </body>
+          </body>
           </body>
         </body>
       </body>
@@ -129,6 +137,7 @@
     <position name="xoay_de"  joint="xoay_de"  ctrlrange="-3.1 3.1"/>
     <position name="vai"      joint="vai"      ctrlrange="-2 2"/>
     <position name="khuyu"    joint="khuyu"    ctrlrange="-2.7 2.7"/>
+    <position name="xoay_cang_tay" joint="xoay_cang_tay" ctrlrange="-3.1 3.1" kp="300"/>
     <position name="co_tay"   joint="co_tay"   ctrlrange="-2.2 2.2"/>
     <position name="xoay_tay" joint="xoay_tay" ctrlrange="-3.1 3.1" kp="200"/>
     <position name="kep" joint="ngon_trai" ctrlrange="0 0.05" kp="1000" forcerange="-30 30"/>
@@ -140,10 +149,10 @@
 
   <keyframe>
     <key name="san_sang"
-         qpos="0 0.3 1.0 1.84 0 0.045 0.045
+         qpos="0 0.3 1.0 0 1.84 0 0.045 0.045
                0.40 -0.22 0  1 0 0 0
                0.48  0.02 0  1 0 0 0
                0.27 -0.40 0  1 0 0 0"
-         ctrl="0 0.3 1.0 1.84 0 0.045"/>
+         ctrl="0 0.3 1.0 0 1.84 0 0.045"/>
   </keyframe>
 </mujoco>
