@@ -226,4 +226,19 @@ Nói cách khác, bản nâng cấp **dư sức chịu độ rơ của servo gi�
 
 `ket_qua.csv`, `ket_qua_nang_cap.csv` và các biểu đồ hiện tại là dữ liệu **6DOF**. Dữ liệu 5DOF giữ trong `ket_qua_5dof.csv`, `ket_qua_nang_cap_5dof.csv`. So sánh: `so_sanh_5dof_6dof.png`.
 
-Bản nâng cấp 6DOF bằng 5DOF ở hầu hết các ô, **kém hơn** ở lệch encoder lớn (2°: 93 so với 100%, 3°: 80 so với 93%, 4°: 43 so với 73%) và nhiễu camera 20 mm (67 so với 80%). Nguyên nhân cần tìm: tự hiệu chỉnh có thêm 1 khớp phải ước lượng.
+**Bản nâng cấp 6DOF bằng hoặc hơn 5DOF ở mọi ô** (30 lần/mức, cùng seed):
+
+| Nguồn | 5DOF | 6DOF |
+|---|---|---|
+| Lệch encoder 3° | 93% | 97% |
+| Lệch encoder 4° | 73% | 83% |
+| Lệch góc tay–mắt 3° | 67% | 83% |
+| Lệch góc tay–mắt 4° | 30% | 40% |
+| Nhiễu camera 10 mm | 97% | 100% |
+| Lệch vị trí tay–mắt 40 mm | 97% | 100% |
+| Các ô còn lại | bằng nhau | bằng nhau |
+
+Lần chạy 6DOF đầu tiên kém hơn 5DOF (encoder 4°: 43%, nhiễu 20 mm: 67%). Hai bài học:
+
+1. **Khớp không quan sát được thì không hiệu chỉnh được.** Hai marker nằm dọc trục khớp gập cổ tay nên khớp này lệch thì marker gần như đứng yên. Bơm lệch 4° vào từng khớp riêng cho thấy chỉ khớp này làm cốc đổ. Sửa: một nửa tư thế hiệu chỉnh xoay bàn tay 90°, khi đó lệch 4° làm 2 marker chênh cao ~7 mm, đo được.
+2. **Mức tin số đo phải theo độ nhiễu.** Chênh vài mm giữa 2 marker bị nhiễu depth làm giả. Camera nhiễu thì robot "thấy" cổ tay lệch −1° dù không lệch. Robot tự đo nhiễu (độ phân tán giữa 3 khung hình cùng tư thế, camera sạch ~0 mm, nhiễu 20 mm ~1,3 mm) và giảm mức tin ước lượng cổ tay khi camera nhiễu.
