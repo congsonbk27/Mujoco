@@ -191,6 +191,8 @@ def con_coc(robot):
 
 
 SAI_SO_CHO_PHEP = 0.0015   # chỉnh tay tới khi lệch < 1.5 mm
+LECH_TOI_DA = 0.02         # đo thấy tay lệch > 2 cm sau tự hiệu chỉnh -> coi là đo sai, không chỉnh
+SO_KHUNG = 3
 SO_LAN_CHINH = 3
 
 
@@ -198,8 +200,15 @@ def do_vi_tri_tay(robot, cam):
     """Chụp ảnh, tìm 2 marker trên mu bàn tay -> vị trí xy THẬT của trục bàn tay (= xy của TCP
     khi tay chúc thẳng xuống). Trả về None nếu không thấy đủ 2 marker."""
     cam.cap_nhat_ngoai(robot.d)
-    color, depth = cam.chup(robot.d)
-    return tim_marker(cam, color, depth, robot.p[:2])
+    # Lọc theo thời gian: 3 khung hình (cách nhau 20 ms), lấy trung vị -> bớt nhiễu depth
+    kq = []
+    for _ in range(SO_KHUNG):
+        color, depth = cam.chup(robot.d)
+        xy = tim_marker(cam, color, depth, robot.p[:2])
+        if xy is not None:
+            kq.append(xy)
+        robot.buoc(10)
+    return np.median(kq, axis=0) if kq else None
 
 
 def chinh_tay(robot, cam, xy_muon, ngon):
@@ -215,6 +224,9 @@ def chinh_tay(robot, cam, xy_muon, ngon):
             break
         lech = np.array(xy_muon[:2]) - xy_that
         print(f"    chỉnh lần {k+1}: tay lệch {np.linalg.norm(lech)*1000:.1f} mm")
+        if np.linalg.norm(lech) > LECH_TOI_DA:
+            print("    (lệch quá lớn -> nghi đo sai, không chỉnh)")
+            break
         if np.linalg.norm(lech) < SAI_SO_CHO_PHEP:
             break
         lenh = lenh + lech
@@ -276,11 +288,14 @@ def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None, nang_cap=Fa
         tuy_chinh(m, d, cam)
     anh = []
     if nang_cap:
-        delta, rms, n = tu_hieu_chinh(robot, cam)
+        delta, (R_sua, b_sua), rms, n = (lambda k: k if k[0] is not None else (None, (None, None), None, k[3]))(
+            tu_hieu_chinh(robot, cam))
         if delta is None:
             print(f"Tự hiệu chỉnh: chỉ thu được {n} mẫu marker, bỏ qua")
         else:
-            print(f"Tự hiệu chỉnh ({n} mẫu): lệch encoder ước lượng = {np.round(np.degrees(delta), 2)} độ, "
+            goc = np.degrees(np.arccos(np.clip((np.trace(R_sua) - 1) / 2, -1, 1)))
+            print(f"Tự hiệu chỉnh ({n} mẫu): lệch encoder = {np.round(np.degrees(delta), 2)} độ; "
+                  f"sửa camera: dịch {np.round(b_sua * 1000, 1)} mm, xoay {goc:.2f} độ; "
                   f"sai số còn lại (rms x,y,z) = {np.round(rms * 1000, 1)} mm")
 
     def cho_trong(ten, goi_y):

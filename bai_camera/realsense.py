@@ -43,6 +43,9 @@ class CameraRealSense:
         # Mặc định = 0 (hiệu chỉnh hoàn hảo). Bài bai_do_ben dùng để thử độ bền.
         self.R_lech = np.eye(3)
         self.t_lech = np.zeros(3)
+        # Hiệu chỉnh do robot TỰ ƯỚC LƯỢNG (tu_hieu_chinh.py): điểm đo y được sửa thành R_sua·y + t_sua
+        self.R_sua = np.eye(3)
+        self.t_sua = np.zeros(3)
 
     def chup(self, d):
         """Chụp 1 khung hình: trả về (color, depth)."""
@@ -87,4 +90,5 @@ class CameraRealSense:
     def _the_gioi(self, p_cam):
         d = self._d
         R = self.R_lech @ d.cam_xmat[self.cam].reshape(3, 3)
-        return p_cam @ R.T + d.cam_xpos[self.cam] + self.t_lech
+        y = p_cam @ R.T + d.cam_xpos[self.cam] + self.t_lech
+        return y @ self.R_sua.T + self.t_sua
