@@ -108,6 +108,8 @@ class Demo:
         self.rng = np.random.default_rng(seed)
         self.seed = seed
         self.cam = CameraRealSense(self.m, seed=seed)
+        if piper:
+            self.cam_cotay = CameraRealSense(self.m, "realsense_cotay")
         self.lenh = []                            # phím chờ xử lý (viewer gọi từ luồng khác)
         self.tam_dung = False
         self.nang_cap, self.nhieu_manh, self.lech_enc = True, False, False
@@ -142,6 +144,11 @@ class Demo:
             self.viewer.sync()
             time.sleep(0.02)
         self.dem += 1
+        if self.piper and self.viewer is not None and self.dem % 125 == 0:
+            # Camera cổ tay PiPER: chỉ để xem (điều khiển dùng camera trên cao), hình trực tiếp ~4 lần/giây
+            c = self.cam_cotay
+            c.r_mau.update_scene(self.d, c.cam, c.tuy_chon)
+            self.anh_cotay = self.C.anh_nho(c.r_mau.render(), {}, "CAMERA CO TAY")
         if self.dem % 25 == 0:
             self.ve()
 
@@ -231,9 +238,16 @@ class Demo:
         phim = "Space dung | R chay lai | 1 2 3 doi coc | T lam do coc | N nhieu | E encoder | C cu/moi"
         v.set_texts([(None, mujoco.mjtGridPos.mjGRID_TOPLEFT, trai, phai),
                      (None, mujoco.mjtGridPos.mjGRID_BOTTOMLEFT, phim, None)])
-        if anh is not None and v.viewport is not None:
-            h, w = anh.shape[:2]
-            v.set_images((mujoco.MjrRect(v.viewport.width - w - 10, 40, w, h), anh))
+        o = [a for a in (anh if anh is not None else self.anh_cuoi, getattr(self, "anh_cotay", None))
+             if a is not None]
+        if o and v.viewport is not None and (anh is not None or self.dem % 125 == 0):
+            ds, x = [], v.viewport.width - 10           # ô camera trên cao sát mép phải, ô cổ tay bên trái nó
+            for a in o:
+                h, w = a.shape[:2]
+                x -= w
+                ds.append((mujoco.MjrRect(x, 40, w, h), a))
+                x -= 8
+            v.set_images(ds)
 
     def anh_camera(self, color, thay):
         """Ảnh camera thu nhỏ 1/2, đánh dấu cốc tìm được (xanh = đứng, đỏ = nằm)."""
