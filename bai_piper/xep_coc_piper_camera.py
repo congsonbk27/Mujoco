@@ -6,6 +6,7 @@ Chạy (cần model PiPER, xem xep_coc_piper.py):
     python bai_piper/xep_coc_piper_camera.py --ngau-nhien 3 --nang-cap    # + tự hiệu chỉnh, chỉnh tay, phát hiện rơi
     python bai_piper/xep_coc_piper_camera.py --do-coc --nang-cap          # 1 cốc bị đổ từ đầu -> robot dựng lại
     python bai_piper/xep_coc_piper_camera.py --lech-encoder 2 --nang-cap  # encoder lệch 2° mọi khớp
+    python bai_piper/xep_coc_piper_camera.py --pha-do --nang-cap          # cốc đổ GIỮA CHỪNG (xô đổ, tháp đổ, tuột)
     thêm --xem để mở viewer
 
 Dùng lại nguyên các hàm của bài camera (nhin, gap, dat, chinh_tay, tu_hieu_chinh, tim_coc): chúng đọc
@@ -95,6 +96,9 @@ class TayPiper(X.RoBot):
 
     def cho_toi(self, xy, ngon):
         """Chở cốc vòng quanh đế, chậm (~12 cm/s) — lý do xem xep_coc_piper.lap_ke_hoach."""
+        pha = getattr(self, "khi_cho", {}).pop(getattr(self, "dang_cam", None), None)
+        if pha is not None:                           # --pha-do: "cú phá" gắn với chuyến chở cốc này (1 lần)
+            self.su_kien.append((self.d.time + 1.0, pha))
         a, b = self.p, np.array([xy[0], xy[1], self.Z_DI])
         ga, gb = np.arctan2(a[1], a[0]), np.arctan2(b[1], b[0])
         r = max(np.linalg.norm(a[:2]), np.linalg.norm(b[:2]))
@@ -159,6 +163,10 @@ def dung_coc(rb, mieng, truc):
     p_xoay = tcp0 + [0, 0, 0.10]
     m_sau = R @ (mieng - tcp0)                       # vành miệng so với TCP, sau khi xoay
     tcp_dat = np.array([p_xoay[0], p_xoay[1], 0.004 - m_sau[2]])
+    # Chỗ đặt cốc vừa dựng phải cách đế >= 22 cm: sát bệ thì cốc dựa vào bệ, camera đo lệch ~8 cm, kẹp hụt mãi
+    mieng_dat = tcp_dat[:2] + m_sau[:2]
+    if np.linalg.norm(mieng_dat) < 0.22:
+        tcp_dat[:2] += mieng_dat / np.linalg.norm(mieng_dat) * (0.22 - np.linalg.norm(mieng_dat))
     print("  dựng cốc: gắp nghiêng 45°, xoay 90° quanh trục ngón")
     # Tới trên cao (tay chúc xuống) bằng không gian khớp rồi mới hạ + nghiêng theo đường thẳng: đi thẳng
     # trong không gian khớp tới điểm gắp thấp thì ngón quét ngang qua cốc bên cạnh (đã gặp: hất đổ C1).
@@ -181,7 +189,7 @@ def quay(truc, goc):
     return np.eye(3) + np.sin(goc) * K + (1 - np.cos(goc)) * K @ K
 
 
-def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0):
+def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, pha_do=False):
     m = tao_model()
     d = mujoco.MjData(m)
     qadr = {c: m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC}
@@ -224,21 +232,30 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0):
                                    else f"lệch encoder ước lượng {np.round(np.degrees(delta), 1)} độ"))
 
     dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
-    da_xep = set()
-    for i, ten in enumerate(TEN_COC):
+    if pha_do:
+        rb.khi_cho = {"coc1": lambda: xo_do(m, d, rng, "coc3", "khách xô đổ C3 (chưa xếp) khi tay đang chở C1"),
+                      "coc3": lambda: tuot(rb, m, d)}
+    da_xep, da_xo = set(), False
+    for _ in range(18):
+        if len(da_xep) == 3:
+            break
+        if pha_do and not da_xo and {"coc1", "coc2"} <= da_xep:
+            da_xo = True                                  # xô C1 khỏi tháp, lăn ra phía ngoài (-x, xa C2)
+            xo_do(m, d, rng, "coc1", "khách xô đổ C1 của tầng dưới", dxy=(-0.09, 0.0), goc=np.pi)
+            rb.buoc(300)
+        thay = X.nhin(rb, cam)
+        kiem_tra_thap(thay, da_xep, dich)
+        ten = next(c for c in TEN_COC if c not in da_xep)
         print(f"== {ten}")
-        for _ in range(5):
-            thay = X.nhin(rb, cam)
-            try:
-                if lam_mot_lan(rb, cam, thay, ten, i, dich, da_xep, nang_cap, d):
-                    break
-            except AssertionError as e:                 # cốc lăn ra ngoài tầm với
-                print(f"  {e}")
-                rb.toi(rb.p + [0, 0, 0.05], rb.NGON_MO, T=0.5)
-        else:
-            print(f"Không xếp được {ten}")
-            return False
-
+        try:
+            lam_mot_lan(rb, cam, thay, ten, TEN_COC.index(ten), dich, da_xep, nang_cap, d)
+        except AssertionError as e:                       # cốc lăn ra ngoài tầm với
+            print(f"  {e}")
+            rb.toi(rb.p + [0, 0, 0.05], rb.NGON_MO, T=0.5)
+        rb.dang_cam = None
+    else:
+        print("Không xếp xong sau 18 lần thử")
+        return False
     rb.toi_khop(rb.Q_CHO, rb.NGON_MO, T=1.5)
     rb.buoc(int(2.0 / m.opt.timestep))
     # Tiêu chí "tháp đứng vững" như bai_do_ben / demo
@@ -250,6 +267,41 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0):
     if viewer is not None:
         viewer.close()
     return ok
+
+
+def xo_do(m, d, rng, ten, ly_do, dxy=(0.0, 0.0), goc=None):
+    """Khách xô đổ cốc: đặt cốc nằm (lệch dxy so với chỗ cũ), hướng ngẫu nhiên nếu không cho goc."""
+    xy = d.body(ten).xpos[:2] + np.asarray(dxy)
+    dat_coc_nam(m, d, ten, xy, rng.uniform(-np.pi, np.pi) if goc is None else goc)
+    d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
+    print(f"  >>> {ly_do}")
+
+
+def tuot(rb, m, d):
+    """Cốc tuột khỏi tay khi đang chở (tay kẹp trơn / ướt): ma sát ngón và cốc gần 0 trong 0.5 s."""
+    g = [i for i in range(m.ngeom) if m.body(m.geom_bodyid[i]).name in ("link7", "link8", rb.dang_cam)
+         and m.geom_contype[i]]
+    cu = m.geom_friction[g, 0].copy()
+    m.geom_friction[g, 0] = 0.02
+    rb.su_kien.append((d.time + 0.5, lambda: m.geom_friction.__setitem__((g, 0), cu)))
+    print(f"  >>> {rb.dang_cam} TUỘT khỏi tay kẹp khi đang chở")
+
+
+def kiem_tra_thap(thay, da_xep, dich):
+    """Cốc đã xếp còn đúng chỗ không (camera)? Không -> bỏ khỏi da_xep để xếp lại.
+    Cốc tầng dưới hỏng thì cốc trên cũng phải xếp lại."""
+    for c in sorted(da_xep):
+        t = thay.get(c)
+        if c == "coc3" and "coc1" in thay and "coc2" in thay:
+            muc = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
+        else:
+            muc = dich[TEN_COC.index(c)]
+        if t is None or t.get("nam") or np.linalg.norm(t["goc"][:2] - muc[:2]) > 0.015 \
+                or abs(t["goc"][2] - muc[2]) > 0.02:
+            print(f"  camera: {c} không còn đúng chỗ trong tháp -> xếp lại")
+            da_xep.discard(c)
+            if c != "coc3":
+                da_xep.discard("coc3")
 
 
 def lam_mot_lan(rb, cam, thay, ten, i, dich, da_xep, nang_cap, d):
@@ -264,6 +316,7 @@ def lam_mot_lan(rb, cam, thay, ten, i, dich, da_xep, nang_cap, d):
         return False
     print(f"  camera thấy {ten} ở {np.round(thay[ten]['goc'][:2], 3)} "
           f"(sai {np.linalg.norm(thay[ten]['goc'][:2] - d.body(ten).xpos[:2]) * 1000:.1f} mm)")
+    rb.dang_cam = ten
     if not X.gap(rb, thay[ten]["goc"], nang_cap, cam):
         return False
     p_dat = dich[i]
@@ -281,5 +334,7 @@ if __name__ == "__main__":
     ap.add_argument("--nang-cap", action="store_true", help="tự hiệu chỉnh + chỉnh tay bằng camera + phát hiện rơi")
     ap.add_argument("--do-coc", action="store_true", help="làm đổ 1 cốc từ đầu")
     ap.add_argument("--lech-encoder", type=float, default=0.0, metavar="DO")
+    ap.add_argument("--pha-do", action="store_true",
+                    help="cốc đổ GIỮA CHỪNG: xô đổ cốc chưa xếp, xô đổ cốc của tháp, cốc tuột khi chở")
     a = ap.parse_args()
-    raise SystemExit(0 if chay(a.xem, a.ngau_nhien, a.nang_cap, a.do_coc, a.lech_encoder) else 1)
+    raise SystemExit(0 if chay(a.xem, a.ngau_nhien, a.nang_cap, a.do_coc, a.lech_encoder, a.pha_do) else 1)
