@@ -168,6 +168,15 @@ def tu_hieu_chinh(robot, cam):
     if len(hc.mau) < 8:
         return None, None, None, len(hc.mau)
     delta, R, b, rms = hc.giai()
+    # Lọc mẫu ngoại lai: marker bị che một phần (vd. cụm motor cổ tay PiPER) cho tâm đo lệch 5-6 mm, kéo
+    # lời giải ra lệch giả (PiPER: vai +1° khi không có lỗi nào). Bỏ mẫu có phần dư xy > 3x trung vị rồi giải lại.
+    for _ in range(2):
+        r = np.array([np.linalg.norm((hc.fk_marker(q + delta)[k] - (R @ y + b))[:2]) for q, k, y in hc.mau])
+        giu = r < max(3 * np.median(r), 0.002)
+        if giu.all() or giu.sum() < 8:
+            break
+        hc.mau = [x for x, g in zip(hc.mau, giu) if g]
+        delta, R, b, rms = hc.giai()
     robot.bu = delta
     # sửa camera: từ nay mọi điểm camera đo được (cốc, marker) đều qua phép biến đổi R·y + b
     cam.R_sua, cam.t_sua = R, b
