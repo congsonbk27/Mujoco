@@ -1,0 +1,6 @@
+mujoco>=4.0
+numpy
+pillow
+PyOpenGL
+imageio
+imageio-ffmpeg
