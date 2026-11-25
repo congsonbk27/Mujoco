@@ -29,7 +29,7 @@ import numpy as np
 
 THU_MUC = pathlib.Path(__file__).parent
 sys.path.insert(0, str(THU_MUC.parent / "bai_gap_do"))
-from gap_do import KHOP_TAY, GiaiIK, muot, nlerp  # noqa: E402
+from gap_do import KHOP_TAY, GiaiIK, NhipXem, muot, nlerp  # noqa: E402
 
 MODEL_XML = THU_MUC / "xep_coc.xml"
 
@@ -129,6 +129,7 @@ def chay(xem=False, gif=False, seed=None):
     if xem:
         import mujoco.viewer as mjv
         viewer = mjv.launch_passive(m, d)
+    nhip = NhipXem(viewer)
     renderer = mujoco.Renderer(m, 270, 360) if gif else None
     # Nhìn từ phía sau kim tự tháp, vuông góc với hàng cốc -> thấy rõ hình tháp
     cam = mujoco.MjvCamera()
@@ -138,11 +139,8 @@ def chay(xem=False, gif=False, seed=None):
     def buoc_mo_phong(n):
         for i in range(n):
             mujoco.mj_step(m, d)
-            if viewer is not None:
-                if not viewer.is_running():
-                    raise SystemExit(0)
-                viewer.sync()
-                time.sleep(m.opt.timestep)
+            if not nhip(d):
+                raise SystemExit(0)
             if renderer is not None and int(round(d.time / m.opt.timestep)) % 40 == 0:
                 renderer.update_scene(d, cam)
                 khung_hinh.append(renderer.render().copy())

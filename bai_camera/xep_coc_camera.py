@@ -25,7 +25,7 @@ import numpy as np
 THU_MUC = pathlib.Path(__file__).parent
 sys.path.insert(0, str(THU_MUC.parent / "bai_gap_do"))
 sys.path.insert(0, str(THU_MUC.parent / "bai_xep_coc"))
-from gap_do import KHOP_TAY, GiaiIK, muot, nlerp  # noqa: E402
+from gap_do import KHOP_TAY, GiaiIK, NhipXem, muot, nlerp  # noqa: E402
 from xep_coc import (CAO, NGON_DONG, NGON_MO, TEN_COC, THA_CAO, Z_DI, Z_KEP,  # noqa: E402
                      vi_tri_kim_tu_thap)
 
@@ -81,6 +81,7 @@ class RoBot:
         self.z = np.array([0.0, 0.0, -1.0])   # hướng trục z bàn tay (mặc định chúc xuống)
         self.ngon = d.ctrl[self.act_ngon]
         self.viewer, self.renderer = viewer, renderer
+        self.nhip = NhipXem(viewer)
         self.khung_hinh = []
         self.cam_xem = mujoco.MjvCamera()
         self.cam_xem.lookat[:] = [0.2, 0.05, 0.15]
@@ -96,11 +97,8 @@ class RoBot:
                 if self.d.time >= ev[0]:
                     ev[1]()
                     self.su_kien.remove(ev)
-            if self.viewer is not None:
-                if not self.viewer.is_running():
-                    raise SystemExit(0)
-                self.viewer.sync()
-                time.sleep(self.m.opt.timestep)
+            if not self.nhip(self.d):
+                raise SystemExit(0)
             if self.renderer is not None and int(round(self.d.time / self.m.opt.timestep)) % 40 == 0:
                 self.renderer.update_scene(self.d, self.cam_xem)
                 self.khung_hinh.append(self.renderer.render().copy())
