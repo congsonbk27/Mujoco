@@ -89,6 +89,12 @@ class RoBot:
     KC_MARKER = KC_MARKER
     CHO_THEM = 0          # số bước chờ thêm cho tay đứng yên trước khi chụp (servo mềm như PiPER cần lâu hơn)
 
+    def doc_encoder(self):
+        """Góc encoder đọc được lúc này. Mô phỏng: encoder lệch δ (biasprm[0] = kp·δ, xem bai_do_ben) thì
+        đọc ra q_thật − δ. Khác self.q (góc LỆNH): khi tay chưa đứng yên hai giá trị khác nhau."""
+        m = self.m
+        return self.d.qpos[self.ik.qadr] - m.actuator_biasprm[self.act_tay, 0] / m.actuator_gainprm[self.act_tay, 0]
+
     def __init__(self, m, d, viewer=None, renderer=None):
         self.m, self.d = m, d
         self.ik = GiaiIK(m, self.KHOP)
