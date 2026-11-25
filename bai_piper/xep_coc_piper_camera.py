@@ -74,12 +74,21 @@ class TayPiper(X.RoBot):
     # đầu ngón (TCP - 3 cm) cao hơn đỉnh cốc (9 cm) -> không đụng cốc
     DIEM_HIEU_CHINH = [np.array([r * np.cos(a), r * np.sin(a), z])
                        for z in (0.14, 0.22) for r in (0.22, 0.32) for a in (-1.0, -0.3, 0.5)]
+    # Tự hiệu chỉnh nhanh (~8 s thay vì ~24 s): 8 trong 12 điểm, đi 0.6 s, chờ 30% thời gian đứng yên.
+    # Được vì tu_hieu_chinh ghép ảnh với góc ENCODER đọc lúc chụp, tay chưa đứng yên hẳn vẫn đúng.
+    # Đo (12 lần): sai 3 khớp đầu <= 1.0° (bản 24 s: 0.6°).
+    DIEM_HIEU_CHINH = DIEM_HIEU_CHINH[:4] + DIEM_HIEU_CHINH[8:]
+    T_DI_HIEU_CHINH = 0.6
+    HE_SO_CHO_HIEU_CHINH = 0.3
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.tich = np.zeros(6)
         self.lech_enc = np.zeros(6)   # sai số encoder THẬT (chỉ mô phỏng biết; robot phải tự ước lượng)
         self.rng = np.random.default_rng(0)
+
+    def doc_encoder(self):
+        return self.d.qpos[self.ik.qadr] - self.lech_enc
 
     def lenh_khop(self, q):
         """Ghi nhớ góc encoder muốn tới; lệnh thật (có tích phân) do buoc() cập nhật mỗi chu kỳ."""

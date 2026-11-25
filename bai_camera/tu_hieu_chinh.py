@@ -21,6 +21,9 @@ import numpy as np
 from nhan_dang import hsv
 
 LAM_CANG_TAY = 0.3
+# Tay 6DOF: 8 điểm (không kém 12 điểm) với tốc độ cũ -> ~9.7 s thay vì ~14.5 s. Đi nhanh hơn (0.5 s, chờ 50%)
+# thì 6DOF kém rõ ở bài độ bền (lệch encoder 4°: 77 -> 70%, 3°: 97 -> 87%) dù sai số ước lượng trông vẫn nhỏ.
+# PiPER đặt riêng (TayPiper.T_DI_HIEU_CHINH...).
 T_DI = 1.0          # giây di chuyển giữa 2 tư thế hiệu chỉnh
 HE_SO_CHO = 1.0     # nhân với thời gian chờ tay đứng yên trước khi chụp
 LAM_GAP_CO_TAY = 0.02   # gập cổ tay: đo được nhờ tư thế xoay tay 90° -> không cần ép mạnh
@@ -78,13 +81,16 @@ class TuHieuChinh:
             # tay, gập cổ tay lệch 4° làm 2 marker chênh cao ~7 mm -> đo được.
             y = (0.0, 1.0, 0.0) if i % 2 == 0 else (np.cos(np.arctan2(p[1], p[0])), np.sin(np.arctan2(p[1], p[0])), 0.0)
             q = rb.giai_ik_moi(p, y)
-            rb.toi_khop(q, T=T_DI)
-            rb.buoc(int((75 + rb.CHO_THEM) * HE_SO_CHO))
+            rb.toi_khop(q, T=getattr(rb, "T_DI_HIEU_CHINH", T_DI))
+            rb.buoc(int((75 + rb.CHO_THEM) * getattr(rb, "HE_SO_CHO_HIEU_CHINH", HE_SO_CHO)))
             self.cam.cap_nhat_ngoai(rb.d)
             du_doan = self.fk_marker(rb.q)              # dự đoán với δ = 0
             # 3 khung hình mỗi tư thế, gom lại rồi lấy trung vị theo từng marker (lọc nhiễu)
-            theo_marker = {}
+            theo_marker, doc = {}, []
             for _ in range(3):
+                # Ghép số đo camera với góc ENCODER đọc lúc chụp (không phải góc lệnh): tay chưa đứng yên
+                # hẳn vẫn đúng -> chờ ngắn được (PiPER: servo mềm, đứng yên hẳn mất ~1 s mỗi tư thế).
+                doc.append(rb.doc_encoder())
                 color, depth = self.cam.chup(rb.d)
                 for y in do_marker_3d(self.cam, color, depth):
                     # gán cụm đo được cho marker dự đoán gần nhất (lệch vài cm << 10 cm giữa 2 marker)
@@ -93,7 +99,7 @@ class TuHieuChinh:
                         theo_marker.setdefault(k, []).append(y)
                 rb.buoc(10)
             for k, ys in theo_marker.items():
-                self.mau.append((rb.q.copy(), k, np.median(ys, axis=0)))
+                self.mau.append((np.mean(doc, axis=0), k, np.median(ys, axis=0)))
                 if len(ys) >= 2:
                     self.do_phan_tan.append(np.std(np.array(ys)[:, 2]))
 
@@ -160,6 +166,7 @@ def ma_tran_xoay_nho(rx, ry):
 # (cùng một tư thế thì không tách được δ của vai / khuỷu / cổ tay).
 DIEM_HIEU_CHINH = [np.array([r * np.cos(a), r * np.sin(a), z])
                    for z in (0.18, 0.34) for r in (0.3, 0.45) for a in (-1.0, 0.0, 1.3)]
+DIEM_HIEU_CHINH = DIEM_HIEU_CHINH[:4] + DIEM_HIEU_CHINH[8:]
 
 
 def tu_hieu_chinh(robot, cam):
