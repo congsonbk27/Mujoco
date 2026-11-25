@@ -3,6 +3,7 @@
 Các bài học MuJoCo.
 
 | Bài | Nội dung |
+| [bai_coc_nam](bai_coc_nam/) | Cốc bị đổ nằm ngang: gắp ngang thân, xoay bàn tay 90° dựng cốc đứng rồi xếp kim tự tháp (cần 6DOF). `python bai_coc_nam/coc_nam.py --xem --ngau-nhien 3` |
 |---|---|
 | [bai_gap_do](bai_gap_do/) | Cánh tay robot 5 bậc tự do gắp và đặt vật: IK Damped Least Squares, lập quỹ đạo, kẹp bằng ma sát |
 | [bai_xep_coc](bai_xep_coc/) | Xếp 3 cốc thành kim tự tháp: lập kế hoạch nhiều vật, chọn hướng kẹp tránh va chạm, đặt vật lên vật |
