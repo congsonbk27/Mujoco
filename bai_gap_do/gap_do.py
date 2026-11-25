@@ -55,10 +55,11 @@ class GiaiIK:
         self.jacp = np.zeros((3, model.nv))
         self.jacr = np.zeros((3, model.nv))
 
-    def giai(self, q0, p_dich, y_dich, so_vong=100, lam=0.05, tol=1e-4):
-        """Trả về (q, sai_so_vi_tri). q0 là nghiệm khởi đầu (warm start)."""
+    def giai(self, q0, p_dich, y_dich, so_vong=100, lam=0.05, tol=1e-4, z_dich=None):
+        """Trả về (q, sai_so_vi_tri). q0 là nghiệm khởi đầu (warm start).
+        z_dich: hướng trục z bàn tay; mặc định chúc thẳng xuống (gắp từ trên)."""
         q = q0.copy()
-        z_dich = np.array([0.0, 0.0, -1.0])
+        z_dich = np.array([0.0, 0.0, -1.0]) if z_dich is None else np.asarray(z_dich, float)
         for _ in range(so_vong):
             self.d.qpos[self.qadr] = q
             mujoco.mj_kinematics(self.m, self.d)
