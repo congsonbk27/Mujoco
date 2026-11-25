@@ -176,6 +176,7 @@ def hien_anh(viewer, anh):
     viewer.set_images(ds)
 
 S_KEP_NAM = 0.05     # gắp cốc nằm ở điểm trên trục cách vành miệng 5 cm (gần giữa thân)
+R_DAT_XOAY = (0.26, 0.30)   # bán kính (tính từ đế) đặt lại cốc sau khi xoay tiếp tuyến
 LUI = 0.025          # lùi TCP khỏi trục cốc theo hướng tiếp cận: lòng bàn tay (TCP - 1.6 cm) không đè thân cốc
 
 
@@ -193,17 +194,20 @@ def xoay_coc_tiep_tuyen(rb, mieng, truc):
     Rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
     y0 = np.cross(EZ, a)
     z_kep = 0.055                                            # trục cốc ~3 cm + lòng bàn tay phải trên đỉnh thân
+    # Đặt lại ở bán kính 26-30 cm: sát đế (khách dời cốc tới ~22 cm) thì gắp nghiêng 45° để dựng không với tới
+    r = np.linalg.norm(tam[:2])
+    dat = tam + (np.clip(r, R_DAT_XOAY[0], R_DAT_XOAY[1]) - r) * r_hat
     print(f"  cốc nằm xuyên tâm -> xoay {np.degrees(phi):.0f}° cho nằm theo hướng tiếp tuyến")
     rb.toi_khop(rb.giai_ik([tam[0], tam[1], rb.Z_DI], y0), rb.NGON_MO, T=1.5)
     rb.toi([tam[0], tam[1], z_kep], rb.NGON_MO, T=1.2, y=y0)
     rb.toi([tam[0], tam[1], z_kep], rb.NGON_DONG, T=0.6, y=y0)
     rb.toi([tam[0], tam[1], 0.12], rb.NGON_DONG, T=1.0, y=y0)
-    rb.toi([tam[0], tam[1], 0.12], rb.NGON_DONG, T=1.2, y=Rz @ y0)
-    rb.toi([tam[0], tam[1], z_kep + 0.003], rb.NGON_DONG, T=1.0, y=Rz @ y0)
-    rb.toi([tam[0], tam[1], z_kep + 0.003], rb.NGON_MO, T=0.5, y=Rz @ y0)
-    rb.toi([tam[0], tam[1], rb.Z_DI], rb.NGON_MO, T=1.0, y=Rz @ y0)
+    rb.toi([dat[0], dat[1], 0.12], rb.NGON_DONG, T=1.2, y=Rz @ y0)
+    rb.toi([dat[0], dat[1], z_kep + 0.003], rb.NGON_DONG, T=1.0, y=Rz @ y0)
+    rb.toi([dat[0], dat[1], z_kep + 0.003], rb.NGON_MO, T=0.5, y=Rz @ y0)
+    rb.toi([dat[0], dat[1], rb.Z_DI], rb.NGON_MO, T=1.0, y=Rz @ y0)
     t_moi = Rz @ truc
-    return tam - 0.045 * t_moi, t_moi
+    return dat - 0.045 * t_moi, t_moi
 
 
 def dung_coc(rb, mieng, truc):
@@ -212,7 +216,7 @@ def dung_coc(rb, mieng, truc):
     r_hat = np.array([tam[0], tam[1], 0.0]) / np.linalg.norm(tam[:2])
     a = np.array([truc[0], truc[1], 0.0])
     a /= np.linalg.norm(a)
-    if abs(a @ r_hat) > 0.5:
+    if abs(a @ r_hat) > 0.5 or np.linalg.norm(tam[:2]) < R_DAT_XOAY[0] - 0.02:   # xuyên tâm hoặc sát đế
         mieng, truc = xoay_coc_tiep_tuyen(rb, mieng, truc)
         a = np.array([truc[0], truc[1], 0.0])
         a /= np.linalg.norm(a)
