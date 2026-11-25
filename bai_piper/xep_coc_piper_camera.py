@@ -297,7 +297,7 @@ def kiem_tra_thap(thay, da_xep, dich):
         else:
             muc = dich[TEN_COC.index(c)]
         if t is None or t.get("nam") or np.linalg.norm(t["goc"][:2] - muc[:2]) > 0.015 \
-                or abs(t["goc"][2] - muc[2]) > 0.02:
+                or abs(t["goc"][2] - muc[2]) > 0.04:   # độ cao chỉ để phân biệt sàn (0) / tầng 2 (9 cm)
             print(f"  camera: {c} không còn đúng chỗ trong tháp -> xếp lại")
             da_xep.discard(c)
             if c != "coc3":
