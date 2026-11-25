@@ -383,8 +383,8 @@ class Demo:
                     if X.dat(rb, p_dat, self.cam, self.nang_cap):
                         self.da_xep.add(ten)
                         break
-                except AssertionError:                # IK không tới được (cốc lăn ra ngoài tầm với)
-                    print("Cốc ngoài tầm với -> nhìn lại")
+                except AssertionError as e:           # IK không tới được (cốc lăn ra ngoài tầm với)
+                    print(f"Cốc ngoài tầm với ({e}) -> nhìn lại")
                     rb.toi(rb.p + [0, 0, 0.05], NGON_MO, T=0.5)
                 finally:
                     self.dang_cam = None
