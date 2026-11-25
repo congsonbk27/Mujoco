@@ -56,6 +56,7 @@ Lessons build on each other through `sys.path.insert` of sibling folders and pla
 - `bai_coc_nam/coc_nam.py`: righting a fallen cup (needs the 6DOF wrist); `dat_coc_nam`, `ke_hoach_dung_coc` are reused by the demo and PiPER.
 - `bai_piper/`: the same pipeline on the real AgileX PiPER model (`xep_coc_piper.py` → `_camera.py` → `_cotay.py`, eye-in-hand). Reuses IK and camera modules but with its own grasp constants (PiPER wrist is limited to ±70°, so the arm sits on a 13 cm pedestal).
 - `demo/demo_live.py`: wraps `xep_coc_camera` with keyboard sabotage. Its keys collide with MuJoCo viewer shortcuts, so it restores the visual flags after each key.
+- `demo_piper/`: standalone PiPER-only copy sent to customers (flat folder, customer clones Menagerie into it). After changing any `bai_*` module it uses, run `python dong_bo_demo_piper.py` to re-copy. `demo_piper.py`, `kiem_tra_may.py` and `README.md` there are hand-edited and not synced: port `demo/demo_live.py` changes manually.
 
 ### `--nang-cap` (upgrade) mode
 Self-calibration at startup (12 poses, half with the hand rotated 90° so the wrist-pitch joint is observable), visual servoing on hand markers before release, and drop detection via finger opening. Without it the arm trusts the camera and encoders blindly.
