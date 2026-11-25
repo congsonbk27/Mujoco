@@ -21,6 +21,8 @@ import numpy as np
 from nhan_dang import hsv
 
 LAM_CANG_TAY = 0.3
+T_DI = 1.0          # giây di chuyển giữa 2 tư thế hiệu chỉnh
+HE_SO_CHO = 1.0     # nhân với thời gian chờ tay đứng yên trước khi chụp
 LAM_GAP_CO_TAY = 0.02   # gập cổ tay: đo được nhờ tư thế xoay tay 90° -> không cần ép mạnh
 TEN_MARKER = ["marker_trai", "marker_phai"]
 
@@ -76,8 +78,8 @@ class TuHieuChinh:
             # tay, gập cổ tay lệch 4° làm 2 marker chênh cao ~7 mm -> đo được.
             y = (0.0, 1.0, 0.0) if i % 2 == 0 else (np.cos(np.arctan2(p[1], p[0])), np.sin(np.arctan2(p[1], p[0])), 0.0)
             q = rb.giai_ik_moi(p, y)
-            rb.toi_khop(q, T=1.0)
-            rb.buoc(75 + rb.CHO_THEM)
+            rb.toi_khop(q, T=T_DI)
+            rb.buoc(int((75 + rb.CHO_THEM) * HE_SO_CHO))
             self.cam.cap_nhat_ngoai(rb.d)
             du_doan = self.fk_marker(rb.q)              # dự đoán với δ = 0
             # 3 khung hình mỗi tư thế, gom lại rồi lấy trung vị theo từng marker (lọc nhiễu)
