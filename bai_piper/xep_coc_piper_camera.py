@@ -39,13 +39,27 @@ from xep_coc import CAO, TEN_COC, vi_tri_kim_tu_thap  # noqa: E402
 EZ = np.array([0.0, 0.0, 1.0])
 
 
+NGHIENG_COTAY = np.radians(10)    # camera cổ tay chúc về phía trục bàn tay 10°: điểm gắp gần giữa ảnh
+CAM_X_COTAY = 0.06                # camera cổ tay lệch 6 cm khỏi trục bàn tay (theo trục x của tay), tránh ngón
+
+
+def gan_cam_cotay(spec):
+    """Camera "realsense_cotay" (kiểu D405) gắn cạnh bàn tay PiPER, nhìn xuôi theo ngón.
+    Camera MuJoCo nhìn theo -z của nó: xyaxes chọn sao cho hướng nhìn = (-sin t, 0, cos t) trong hệ link6."""
+    tay, t = spec.body("link6"), NGHIENG_COTAY
+    tay.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.012, 0.021, 0.021], pos=[CAM_X_COTAY, 0, 0.02],
+                 rgba=[0.15, 0.15, 0.17, 1], contype=0, conaffinity=0)
+    tay.add_camera(name="realsense_cotay", pos=[CAM_X_COTAY, 0, 0.042],
+                   xyaxes=[0, 1, 0, np.cos(t), 0, np.sin(t)], fovy=58)
+
+
 def tao_model():
     spec = P.tao_spec()
     # camera trên cao + 2 marker hồng ở mu bàn tay PiPER, xa trục 8.5 cm: cụm motor cổ tay PiPER to,
     # gắn 5.2 cm như tay tự dựng thì camera chỉ thấy 1 marker (bị che một phần) -> đo sai ~9 mm
     X.gan_camera(spec, "link6", z_tai=0.0, kc=TayPiper.KC_MARKER)
+    gan_cam_cotay(spec)               # bài này chỉ dùng để XEM (ô thứ 2 trên viewer)
     return spec.compile()
-
 
 class TayPiper(X.RoBot):
     KHOP = P.KHOP
@@ -77,12 +91,30 @@ class TayPiper(X.RoBot):
         (chỉ cập nhật lúc tay đang đi thì khi dừng lệnh giữ phần tích phân dư -> khớp trôi tới ~5°).
         Servo bám theo ENCODER: encoder lệch δ thì khớp thật đứng ở (lệnh + δ) -> như bài độ bền."""
         for _ in range(n):
-            if int(round(self.d.time / self.m.opt.timestep)) % 10 == 0 and hasattr(self, "muc"):
+            buoc_so = int(round(self.d.time / self.m.opt.timestep))
+            if buoc_so % 10 == 0 and hasattr(self, "muc"):
                 doc = self.d.qpos[self.ik.qadr] - self.lech_enc
                 self.tich = np.clip(self.tich + P.KI * (self.muc - doc), -0.15, 0.15)
                 self.d.ctrl[self.act_tay] = self.muc + self.tich
             super().buoc(1)
+            # Các ô camera trên viewer: hình trực tiếp ~4 lần/giây (ảnh vừa nhận dạng được giữ 1 s)
+            if self.viewer is not None and getattr(self, "cam_hien", None) and buoc_so % 125 == 0:
+                for i, (_, c) in enumerate(self.cam_hien):
+                    if self.d.time >= self.giu_anh.get(i, 0.0):
+                        c.r_mau.update_scene(self.d, c.cam, c.tuy_chon)
+                        self.anh_hien[i] = anh_nho(c.r_mau.render(), {}, self.cam_hien[i][0])
+                hien_anh(self.viewer, self.anh_hien)
 
+    def bao_anh(self, color, thay, i=0):
+        """Ảnh camera thứ i vừa chụp để nhận dạng: hiện lên viewer kèm đánh dấu cốc, giữ 1 s."""
+        if self.viewer is not None and getattr(self, "cam_hien", None):
+            self.anh_hien[i] = anh_nho(color, thay, self.cam_hien[i][0])
+            self.giu_anh[i] = self.d.time + 1.0
+            hien_anh(self.viewer, self.anh_hien)
+
+    def gan_cam_hien(self, *cac_cam):
+        """(nhãn, camera) theo thứ tự ô từ phải sang trái; camera đầu tiên là camera robot dùng."""
+        self.cam_hien, self.anh_hien, self.giu_anh = list(cac_cam), {}, {}
     def giai_ik(self, p, y, z=(0, 0, -1.0)):
         """IK nhiều điểm khởi đầu ngẫu nhiên (PiPER có giới hạn khớp hẹp, 1 điểm khởi đầu dễ kẹt)."""
         lo, hi = self.ik.lo, self.ik.hi
@@ -106,6 +138,33 @@ class TayPiper(X.RoBot):
         for dich in (giua, b):
             self.toi(dich, ngon, T=max(1.0, np.linalg.norm(dich[:2] - self.p[:2]) / 0.12))
 
+
+def anh_nho(color, thay, nhan):
+    """Ảnh camera thu nhỏ 1/2; cốc đứng khoanh xanh, cốc nằm khoanh đỏ."""
+    from PIL import Image, ImageDraw
+    im = Image.fromarray(np.ascontiguousarray(color[::2, ::2]))
+    ve = ImageDraw.Draw(im)
+    for ten, t in thay.items():
+        u, v = t["uv"][0] / 2, t["uv"][1] / 2
+        mau = (255, 40, 40) if t.get("nam") else (0, 255, 0)
+        ve.ellipse([u - 9, v - 9, u + 9, v + 9], outline=mau, width=2)
+        ve.text((u + 11, v - 6), ten.upper() + (" NAM" if t.get("nam") else ""), fill=mau,
+                stroke_width=2, stroke_fill=(0, 0, 0))
+    ve.text((6, 4), nhan, fill=(255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0))
+    return np.asarray(im)
+
+
+def hien_anh(viewer, anh):
+    """Đặt các ô ảnh {thứ tự: ảnh} ở góc dưới phải viewer, ô 0 sát mép phải."""
+    if viewer.viewport is None or not anh:
+        return
+    ds, x = [], viewer.viewport.width - 10
+    for i in sorted(anh):
+        a = anh[i]
+        x -= a.shape[1]
+        ds.append((mujoco.MjrRect(x, 10, a.shape[1], a.shape[0]), a))
+        x -= 8
+    viewer.set_images(ds)
 
 S_KEP_NAM = 0.05     # gắp cốc nằm ở điểm trên trục cách vành miệng 5 cm (gần giữa thân)
 LUI = 0.025          # lùi TCP khỏi trục cốc theo hướng tiếp cận: lòng bàn tay (TCP - 1.6 cm) không đè thân cốc
@@ -226,6 +285,8 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, p
         rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
         print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ")
     cam = CameraRealSense(m, seed=0 if seed is None else seed)
+    rb.gan_cam_hien(("REALSENSE TREN CAO (dieu khien)", cam),
+                    ("CAMERA CO TAY (chi xem)", CameraRealSense(m, "realsense_cotay")))
     if nang_cap:
         delta = tu_hieu_chinh(rb, cam)[0]
         print("Tự hiệu chỉnh: " + ("không đủ mẫu marker" if delta is None
@@ -243,7 +304,9 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, p
             da_xo = True                                  # xô C1 khỏi tháp, lăn ra phía ngoài (-x, xa C2)
             xo_do(m, d, rng, "coc1", "khách xô đổ C1 của tầng dưới", dxy=(-0.09, 0.0), goc=np.pi)
             rb.buoc(300)
-        thay = X.nhin(rb, cam)
+        ghi = []
+        thay = X.nhin(rb, cam, ghi)
+        rb.bao_anh(ghi[-1][0], thay)
         kiem_tra_thap(thay, da_xep, dich)
         ten = next(c for c in TEN_COC if c not in da_xep)
         print(f"== {ten}")

@@ -31,8 +31,7 @@ from nhan_dang import tim_coc  # noqa: E402
 from realsense import CameraRealSense  # noqa: E402
 from xep_coc import CAO, TEN_COC, vi_tri_kim_tu_thap  # noqa: E402
 
-NGHIENG = np.radians(10)          # camera chúc về phía trục bàn tay 10°: điểm gắp nằm gần giữa ảnh
-CAM_X = 0.06                      # camera lệch 6 cm khỏi trục bàn tay (theo trục x của tay), tránh ngón kẹp
+NGHIENG, CAM_X = C.NGHIENG_COTAY, C.CAM_X_COTAY   # vị trí camera cổ tay (xem C.gan_cam_cotay)
 Z_NHIN = 0.23                     # TCP khi quét: cao nhất PiPER còn chúc tay thẳng xuống được -> nhìn rộng nhất
 # Điểm quét (xy của TCP): 2 điểm phủ vùng cốc, 1 điểm trên chỗ xếp tháp
 DIEM_QUET = [np.array([0.28 * np.cos(a), 0.28 * np.sin(a)]) for a in (-0.85, -0.15)]
@@ -43,13 +42,8 @@ TU_THE_THAP = (np.array(P.TAM_THAP) + [CAM_X * np.sin(NGHIENG), 0.0], P.Z_DI)
 
 def tao_model():
     spec = P.tao_spec()
-    tay = spec.body("link6")
-    # Vỏ camera D405 (4.2 x 4.2 x 2.3 cm) gắn cạnh bàn tay; camera MuJoCo nhìn theo -z của nó:
-    # xyaxes chọn sao cho hướng nhìn = (-sin t, 0, cos t) trong hệ link6 (xuôi theo ngón, chúc vào trục tay)
-    t = NGHIENG
-    tay.add_geom(type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.012, 0.021, 0.021], pos=[CAM_X, 0, 0.02],
-                 rgba=[0.15, 0.15, 0.17, 1], contype=0, conaffinity=0)
-    tay.add_camera(name="realsense", pos=[CAM_X, 0, 0.042], xyaxes=[0, 1, 0, np.cos(t), 0, np.sin(t)], fovy=58)
+    C.gan_cam_cotay(spec)             # camera robot dùng
+    X.gan_camera(spec)                # camera trên cao: chỉ để XEM (ô thứ 2 trên viewer), không marker
     return spec.compile()
 
 
@@ -81,6 +75,7 @@ def chup(rb, cam):
             continue
         t["lech_tam"] = np.hypot(u - cam.cx, v - cam.cy)   # độ "giữa ảnh": dùng để gộp nhiều lần chụp
         thay[c] = t
+    rb.bao_anh(color, thay)
     return thay
 
 
@@ -211,7 +206,8 @@ def chay(xem=False, seed=None, do_coc=False, lech_encoder=0.0, pha_do=False):
     if lech_encoder:
         rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
         print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ (KHÔNG tự hiệu chỉnh)")
-    cam = CameraCoTay(m, seed=0 if seed is None else seed)
+    cam = CameraCoTay(m, "realsense_cotay", seed=0 if seed is None else seed)
+    rb.gan_cam_hien(("CAMERA CO TAY (dieu khien)", cam), ("REALSENSE TREN CAO (chi xem)", CameraRealSense(m)))
 
     dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
     if pha_do:
