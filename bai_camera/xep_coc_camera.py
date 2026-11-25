@@ -78,6 +78,7 @@ class RoBot:
         self.q = d.qpos[self.ik.qadr].copy()
         self.p = d.site_xpos[self.tcp].copy()
         self.y = np.array([0.0, 1.0, 0.0])
+        self.z = np.array([0.0, 0.0, -1.0])   # hướng trục z bàn tay (mặc định chúc xuống)
         self.ngon = d.ctrl[self.act_ngon]
         self.viewer, self.renderer = viewer, renderer
         self.khung_hinh = []
@@ -104,19 +105,24 @@ class RoBot:
                 self.renderer.update_scene(self.d, self.cam_xem)
                 self.khung_hinh.append(self.renderer.render().copy())
 
-    def toi(self, p_dich, ngon=None, T=1.2, y=None):
-        """Đưa TCP tới p_dich trong T giây (quỹ đạo smoothstep), đồng thời đổi độ mở ngón."""
+    def toi(self, p_dich, ngon=None, T=1.2, y=None, z=None):
+        """Đưa TCP tới p_dich trong T giây (quỹ đạo smoothstep), đồng thời đổi độ mở ngón.
+        z: hướng trục z bàn tay muốn tới (mặc định chúc xuống); dùng khi dựng cốc nằm (bai_coc_nam)."""
         p_dich = np.asarray(p_dich, float)
         ngon = self.ngon if ngon is None else ngon
         y = self.y if y is None else y
+        z = np.array([0.0, 0.0, -1.0]) if z is None else np.asarray(z, float)
         n, bdk = int(T / self.m.opt.timestep), 10
         for i in range(0, n, bdk):
             s = muot((i + bdk) / n)
-            self.q, _ = self.ik.giai(self.q, (1 - s) * self.p + s * p_dich, nlerp(self.y, y, s))
+            zs = nlerp(self.z, z, s)
+            ys = nlerp(self.y, y, s)
+            ys = ys - (ys @ zs) * zs                  # giữ y vuông góc z khi cả 2 cùng xoay
+            self.q, _ = self.ik.giai(self.q, (1 - s) * self.p + s * p_dich, ys / np.linalg.norm(ys), z_dich=zs)
             self.d.ctrl[self.act_tay] = self.q - self.bu
             self.d.ctrl[self.act_ngon] = (1 - s) * self.ngon + s * ngon
             self.buoc(bdk)
-        self.p, self.y, self.ngon = np.array(p_dich, float), y, ngon
+        self.p, self.y, self.z, self.ngon = np.array(p_dich, float), y, z, ngon
 
     def toi_khop(self, q_dich, ngon=None, T=1.5):
         """Di chuyển trong KHÔNG GIAN KHỚP: nội suy thẳng từ góc khớp hiện tại tới q_dich.
@@ -136,6 +142,7 @@ class RoBot:
         mujoco.mj_kinematics(self.m, self.ik.d)
         self.p = self.ik.d.site_xpos[self.tcp].copy()
         self.y = self.ik.d.site_xmat[self.tcp].reshape(3, 3)[:, 1].copy()
+        self.z = self.ik.d.site_xmat[self.tcp].reshape(3, 3)[:, 2].copy()
 
     def giai_ik_moi(self, p_dich, y_dich=(0.0, 1.0, 0.0)):
         """Giải IK từ một điểm khởi đầu 'hợp lý': đế quay về phía đích, tay gập vừa phải.
@@ -143,7 +150,8 @@ class RoBot:
         y_dich = np.asarray(y_dich, float)
         de = np.arctan2(p_dich[1], p_dich[0])
         # xoay tay khởi đầu: góc giữa y_dich và trục y "tự nhiên" của tay khi đế quay góc de
-        xoay = np.arctan2(y_dich[1], y_dich[0]) - (de + np.pi / 2)
+        # (tay chúc xuống: xoay_tay quay NGƯỢC chiều với hướng y nhìn từ trên xuống)
+        xoay = (de + np.pi / 2) - np.arctan2(y_dich[1], y_dich[0])
         xoay = (xoay + np.pi) % (2 * np.pi) - np.pi
         q0 = np.array([de, 0.3, 1.0, 0.0, 1.84, xoay])
         q, sai = self.ik.giai(q0, np.asarray(p_dich, float), y_dich, so_vong=500)

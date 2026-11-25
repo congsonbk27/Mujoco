@@ -74,6 +74,44 @@ def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15):
     return np.mean(tam, axis=0) if tam else None
 
 
+NGUONG_NAM = 0.082   # đỉnh cốc đứng 9 cm, cốc nằm ~7 cm (+ ~5 mm do nhiễu khi lấy phân vị 95) -> lấy giữa
+R_MIENG, R_DAY = 0.035, 0.025
+
+
+def coc_nam(p):
+    """Cốc nằm đổ: từ đám điểm 3D thân cốc (nhìn từ trên) suy ra trục và tâm vành miệng.
+      - Trục cốc = hướng trải dài nhất của đám điểm trên mặt sàn (PCA).
+      - Đầu miệng là đầu CAO hơn (miệng r 3.5 cm > đáy r 2.5 cm).
+      - Tâm vành miệng: ở mút đám điểm phía miệng, cao bằng bán kính miệng.
+    Trả về {'nam': True, 'mieng': [x,y,z], 'truc': vector đơn vị miệng -> đáy} hoặc None."""
+    if len(p) < 250:
+        return None        # thấy quá ít điểm (bị cánh tay che): không đủ chắc là cốc nằm
+    xy = p[:, :2]
+    tam = np.median(xy, axis=0)
+    _, sv, vt = np.linalg.svd(xy - tam, full_matrices=False)
+    if sv[0] < 1.3 * sv[1]:
+        return None        # nhìn từ trên gần tròn -> cốc đứng (thấp do đo sai), không phải cốc nằm (dài 9 x 6 cm)
+    a = vt[0]
+    s = (xy - tam) @ a
+    s0, s1 = np.percentile(s, [2, 98])
+    dau = np.percentile(p[s < s0 + 0.02, 2], 90) < np.percentile(p[s > s1 - 0.02, 2], 90)
+    if dau:                                       # đầu s lớn cao hơn -> đó là miệng; đổi chiều trục
+        a, s0 = -a, -s1
+    # Tâm theo phương ngang trục: chỉ lấy "sống lưng" (điểm cao nhất trong từng lát 1 cm dọc trục),
+    # nằm đúng trên trục. Lấy cả đám điểm thì lệch ~7 mm về phía camera (camera nhìn xiên thấy 1 bên thân nhiều hơn).
+    lat = np.floor(s / 0.01)
+    song = np.zeros(len(p), bool)
+    for k in np.unique(lat):
+        o = lat == k
+        song |= o & (p[:, 2] > p[o, 2].max() - 0.003)
+    lech = np.median((xy[song] - tam) @ np.array([-a[1], a[0]]))
+    mieng_xy = tam + s0 * a + lech * np.array([-a[1], a[0]])
+    nghieng = np.arcsin((R_MIENG - R_DAY) / 0.09)  # trục chúc xuống về phía đáy (đáy nhỏ hơn)
+    truc = np.array([a[0] * np.cos(nghieng), a[1] * np.cos(nghieng), -np.sin(nghieng)])
+    return {"nam": True, "mieng": np.array([*mieng_xy, R_MIENG * np.cos(nghieng)]), "truc": truc,
+            "goc": np.array([*mieng_xy, 0.0])}
+
+
 def tim_coc(cam, color, depth, so_diem_toi_thieu=40):
     """Trả về dict: tên cốc -> {'goc': vị trí gốc cốc (tâm vành miệng) [x,y,z], 'so_diem': n, 'uv': (u,v)}.
     Cốc không thấy (bị che / ngoài khung hình) sẽ không có trong dict."""
@@ -85,6 +123,11 @@ def tim_coc(cam, color, depth, so_diem_toi_thieu=40):
             continue
         p = cam.chieu_nguoc(u, v, depth[v, u])    # N x 3, toạ độ thế giới
         z_dinh = np.percentile(p[:, 2], 95)       # độ cao mặt đáy cốc (chống điểm nhiễu cao bất thường)
+        if z_dinh < NGUONG_NAM:
+            nam = coc_nam(p)
+            if nam is not None:
+                ket_qua[ten] = {**nam, "so_diem": len(p), "uv": (float(np.median(u)), float(np.median(v)))}
+                continue
         mat_tren = np.abs(p[:, 2] - z_dinh) < 0.01
         if mat_tren.sum() < 10:
             continue
