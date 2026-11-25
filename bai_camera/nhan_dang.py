@@ -44,7 +44,7 @@ def mat_na_mau(color):
 KC_MARKER = 0.052   # mỗi marker cách trục bàn tay 5.2 cm theo trục x
 
 
-def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15):
+def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15, kc=KC_MARKER):
     """Tìm marker màu hồng (hue ~300 độ) trên mu bàn tay -> xy THẬT của trục bàn tay.
 
     2 marker nằm 2 bên trục tay, cách trục 5.2 cm theo trục x thế giới (tay luôn kẹp theo trục y
@@ -70,7 +70,7 @@ def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15):
             continue
         xy = np.median(c[:, :2], axis=0)
         dau = 1.0 if xy[0] > xy_uoc_luong[0] else -1.0
-        tam.append(xy - [dau * KC_MARKER, 0.0])
+        tam.append(xy - [dau * kc, 0.0])
     return np.mean(tam, axis=0) if tam else None
 
 

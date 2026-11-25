@@ -49,6 +49,10 @@ KI = 0.3            # hệ số tích phân mỗi chu kỳ điều khiển (20 m
 
 
 def tao_model():
+    return tao_spec().compile()
+
+
+def tao_spec():
     if not PIPER_XML.exists():
         raise SystemExit("Thiếu model PiPER. Chạy:\n  git clone --depth 1 "
                          "https://github.com/google-deepmind/mujoco_menagerie bai_piper/mujoco_menagerie")
@@ -85,7 +89,7 @@ def tao_model():
         b.add_freejoint()
         b.add_geom(type=mujoco.mjtGeom.mjGEOM_MESH, meshname="coc", mass=0.03, rgba=mau,
                    friction=[1, 0.02, 0.001], condim=4, solref=[0.004, 1])
-    return spec.compile()
+    return spec
 
 
 def lap_ke_hoach(nguon, dich, y_kep):
