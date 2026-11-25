@@ -69,11 +69,30 @@ class RoBotDemo(X.RoBot):
         for _ in range(n):
             self.demo.xu_ly()
             super().buoc(1)
+            if self.demo.ghi is not None and int(round(self.d.time / self.m.opt.timestep)) % 20 == 0:
+                self.demo.quay_khung()                 # 20 bước x 2 ms = 25 khung/giây thời gian mô phỏng
 
 
 class Demo:
-    def __init__(self, xem=True, seed=0):
+    def __init__(self, xem=True, seed=0, quay=None):
         self.m = X.tao_model(nang_cap=True)       # luôn gắn marker; bản cũ chỉ không dùng tới
+        self.ghi, self.anh_cuoi, self.kich_ban, self.tu_bam = None, None, [], False
+        if quay:
+            import imageio
+            from PIL import ImageFont
+            self.m.vis.global_.offwidth, self.m.vis.global_.offheight = 1280, 720
+            self.rd = mujoco.Renderer(self.m, 720, 1280)
+            self.cam_quay = mujoco.MjvCamera()
+            self.cam_quay.lookat[:] = [0.22, 0.0, 0.25]      # nhìn chéo từ trước-trái: thấy cốc, tay, chỗ xếp tháp
+            self.cam_quay.distance, self.cam_quay.azimuth, self.cam_quay.elevation = 1.55, -150, -30
+            self.ghi = imageio.get_writer(quay, fps=25, quality=7, macro_block_size=8)
+            self.font = self.font_nho = None
+            for ten in ("arial.ttf", "DejaVuSans.ttf"):   # font có dấu tiếng Việt (Windows / Ubuntu)
+                try:
+                    self.font, self.font_nho = ImageFont.truetype(ten, 26), ImageFont.truetype(ten, 20)
+                    break
+                except OSError:
+                    pass
         self.d = mujoco.MjData(self.m)
         self.rng = np.random.default_rng(seed)
         self.seed = seed
@@ -217,9 +236,31 @@ class Demo:
     def nhin(self):
         ghi = []
         thay = X.nhin(self.robot, self.cam, ghi)
-        if self.viewer is not None:
-            self.ve(self.anh_camera(ghi[-1][0], thay))
+        if self.viewer is not None or self.ghi is not None:
+            self.anh_cuoi = self.anh_camera(ghi[-1][0], thay)
+            self.ve(self.anh_cuoi)
         return thay
+
+    def quay_khung(self):
+        """Một khung video: cảnh 3D + dòng trạng thái (có dấu) + ô camera."""
+        from PIL import Image, ImageDraw
+        self.rd.update_scene(self.d, self.cam_quay)
+        im = Image.fromarray(self.rd.render())
+        if self.anh_cuoi is not None:
+            o = Image.fromarray(self.anh_cuoi)
+            im.paste(o, (1280 - o.width - 16, 720 - o.height - 16))
+        ve = ImageDraw.Draw(im)
+        f, fn = self.font, self.font_nho
+        chu = (khong_dau if f is None else str)
+        dong = [chu(self.trang_thai)[:80],
+                "Bản: " + ("NÂNG CẤP (tự hiệu chỉnh + chỉnh tay bằng camera)" if self.nang_cap else "CŨ"),
+                "Camera: " + ("nhiễu mạnh 10 mm" if self.nhieu_manh else "bình thường")
+                + "    Encoder: " + ("LỆCH 2°" if self.lech_enc else "chuẩn"),
+                f"Kết quả: {self.so_dat}/{self.so_lan} lần đạt"]
+        ve.rectangle([0, 0, 1280, 132], fill=(0, 0, 0))
+        for i, s in enumerate(dong):
+            ve.text((16, 8 + i * 30), chu(s), font=f if i == 0 else fn, fill=(255, 255, 255) if i else (255, 220, 80))
+        self.ghi.append_data(np.asarray(im))
 
     def dung_coc(self, ten, t):
         print(f"Thấy {ten} NẰM ĐỔ -> dựng lại (xoay bàn tay 90 độ)")
@@ -248,6 +289,8 @@ class Demo:
         rb.bu = self.bu.copy()
         if self.tu_bam:
             self.hen_phim(rb)
+        for t, p in self.kich_ban:                     # chế độ quay video: phím hẹn sẵn theo kịch bản
+            rb.su_kien.append((d.time + t, lambda p=p: self.lenh.append(p)))
         self.tam = d.site_xpos[m.site("dich").id][:2].copy()
         dich = vi_tri_kim_tu_thap(self.tam, np.array([1.0, 0.0, 0.0]))
         self.da_xep, self.dang_cam = set(), None
@@ -342,9 +385,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--thu", type=int, metavar="N", help="không cửa sổ: chạy N lần, tự bấm phím ngẫu nhiên")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--quay", metavar="FILE.mp4", help="không cửa sổ: quay video dự phòng theo kịch bản cố định")
     a = ap.parse_args()
 
-    demo = Demo(xem=a.thu is None, seed=a.seed)
+    demo = Demo(xem=a.thu is None and a.quay is None, seed=a.seed, quay=a.quay)
     thuc = sys.stdout
 
     class Ghi:
@@ -358,6 +402,23 @@ def main():
             thuc.flush()
 
     sys.stdout = Ghi()
+    if a.quay:
+        # Kịch bản video (thời điểm tính bằng giây mô phỏng kể từ đầu mỗi lần chạy):
+        #   lần 1: tự hiệu chỉnh (~23 s) -> khách làm đổ 1 cốc -> robot dựng lại -> khách dời C3, xếp xong
+        #   lần 2: bật lệch encoder 2° + nhiễu camera -> robot tự hiệu chỉnh lại, vẫn xếp được
+        for lan, (truoc, hen) in enumerate([([], [(25, "T"), (48, "3")]), (["E", "N"], [])], start=1):
+            for p in truoc:
+                demo.lam(p)
+            demo.kich_ban = hen
+            ok = demo.mot_lan(a.seed * 1000 + lan)
+            demo.so_lan += 1
+            demo.so_dat += ok
+            print(f"KIM TỰ THÁP: {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
+            demo.robot.buoc(int(3 / demo.m.opt.timestep))   # dừng 3 s trên kết quả
+        demo.ghi.close()
+        sys.stdout = thuc
+        print(f"Đã lưu {a.quay}: đạt {demo.so_dat}/{demo.so_lan}")
+        return 0
     if a.thu is None:
         demo.chay()
         return 0
