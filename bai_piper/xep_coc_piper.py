@@ -128,31 +128,106 @@ def lap_ke_hoach(nguon, dich, y_kep):
     return kh
 
 
+def rai_coc_ngau_nhien(m, d, seed):
+    """Rải 3 cốc ngẫu nhiên trong vùng với tới của PiPER (bán kính 0.22-0.34 m), tránh chỗ xếp tháp."""
+    rng = np.random.default_rng(seed)
+    da_dat, lan = [], 0
+    while len(da_dat) < 3:
+        lan += 1
+        if lan % 200 == 0:          # vùng với tới nhỏ: 2 cốc đầu có thể chiếm hết chỗ -> rải lại từ đầu
+            da_dat = []
+        r, g = rng.uniform(0.22, 0.34), rng.uniform(-1.2, 0.2)
+        p = np.array([r * np.cos(g), r * np.sin(g)])
+        if all(np.linalg.norm(p - q) > 0.14 for q in da_dat) and np.linalg.norm(p - TAM_THAP) > 0.15:
+            da_dat.append(p)
+    for c, p in zip(TEN_COC, da_dat):
+        a = m.joint(m.body(c).jntadr[0]).qposadr[0]
+        d.qpos[a:a + 2] = p
+
+
+class DieuKhien:
+    """Gửi lệnh khớp + ngón và chạy mô phỏng (có nhịp viewer)."""
+
+    def __init__(self, m, d, ik, viewer):
+        self.m, self.d, self.ik = m, d, ik
+        self.act_tay = np.array([m.actuator(j).id for j in KHOP])
+        self.act_ngon = m.actuator("gripper").id
+        self.tcp = m.site("tcp").id
+        self.nhip = NhipXem(viewer)
+
+    def buoc(self, n):
+        for _ in range(n):
+            mujoco.mj_step(self.m, self.d)
+            if not self.nhip(self.d):
+                raise SystemExit(0)
+
+    def toi_tu_the_dau(self, p_dau, y_kep):
+        """Tới tư thế bắt đầu bằng KHÔNG GIAN KHỚP: IK đi thẳng từ "home" (tay duỗi ngang) dễ kẹt ở
+        giới hạn khớp. Thử nhiều nghiệm khởi đầu, lấy nghiệm tốt nhất. Trả về q."""
+        m, d, ik = self.m, self.d, self.ik
+        rng0 = np.random.default_rng(0)
+        q = min((ik.giai(ik.lo + (ik.hi - ik.lo) * rng0.random(6), p_dau, y_kep, so_vong=200) for _ in range(30)),
+                key=lambda k: k[1])[0]
+        n = int(2.0 / m.opt.timestep)
+        for i in range(0, n, 10):
+            d.ctrl[self.act_tay] = Q_NHA + muot((i + 10) / n) * (q - Q_NHA)
+            d.ctrl[self.act_ngon] = NGON_MO
+            self.buoc(10)
+        self.buoc(200)
+        return q
+
+    def theo_ke_hoach(self, q, ke_hoach):
+        """Đi lần lượt các bước (tên, p, y, ngón, T) bằng IK theo đường thẳng. Trả về sai số IK lớn nhất.
+        Khâu tích phân trên lệnh khớp (như bộ PI trong firmware servo của tay thật): actuator của Menagerie
+        mềm (kp 10 ở cổ tay) + ma sát khớp -> cổ tay đứng lệch ~3°, đầu tay lệch ~9 mm, mà khe kẹp chỉ dư 5 mm."""
+        m, d, ik = self.m, self.d, self.ik
+        p0 = d.site_xpos[self.tcp].copy()
+        y0 = d.site_xmat[self.tcp].reshape(3, 3)[:, 1].copy()
+        n0 = NGON_MO
+        sai_max = 0.0
+        tich = np.zeros(6)
+        for ten, p1, y1, n1, T in ke_hoach:
+            n = int(T / m.opt.timestep)
+            for i in range(0, n, 10):
+                s = muot((i + 10) / n)
+                q, sai = ik.giai(q, (1 - s) * p0 + s * p1, nlerp(y0, y1, s))
+                tich = np.clip(tich + KI * (q - d.qpos[ik.qadr]), -0.15, 0.15)
+                d.ctrl[self.act_tay] = q + tich
+                d.ctrl[self.act_ngon] = (1 - s) * n0 + s * n1
+                self.buoc(10)
+            sai_max = max(sai_max, sai)
+            if DEBUG:
+                print(f"{ten:<13} lech tcp {np.linalg.norm(d.site_xpos[self.tcp] - p1) * 1000:5.1f} mm  "
+                      f"q_err {np.round(np.degrees(d.qpos[ik.qadr] - q), 1)}  "
+                      f"ngon {d.qpos[m.joint('joint7').qposadr[0]] * 1000:.1f}")
+            p0, y0, n0 = p1, y1, n1
+        return sai_max
+
+
+def danh_gia(d, dich):
+    """So từng cốc với vị trí mong muốn (C3: giữa vị trí THỰC của C1, C2). Trả về True nếu đạt."""
+    p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
+    dat = True
+    print("\nKết quả:")
+    for i, (c, p_mong) in enumerate(zip(TEN_COC, [dich[0], dich[1], (p1 + p2) / 2 + [0, 0, CAO]]), start=1):
+        b = d.body(c)
+        lech = np.linalg.norm(b.xpos - p_mong)
+        ng = np.degrees(np.arccos(np.clip(b.xmat[8], -1, 1)))
+        ok = lech < 0.008 and ng < 3
+        dat &= ok
+        print(f"  C{i}: lệch {lech * 1000:4.1f} mm, nghiêng {ng:4.1f}° -> {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
+    print(f"Kim tự tháp: {'ĐẠT' if dat else 'KHÔNG ĐẠT'}")
+    return dat
+
+
 def chay(xem=False, seed=None):
     m = tao_model()
     d = mujoco.MjData(m)
     ik = GiaiIK(m, KHOP)
     d.qpos[ik.qadr] = Q_NHA
-    qadr = [m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC]
     if seed is not None:
-        rng = np.random.default_rng(seed)
-        da_dat, lan = [], 0
-        while len(da_dat) < 3:
-            lan += 1
-            if lan % 200 == 0:          # vùng với tới nhỏ: 2 cốc đầu có thể chiếm hết chỗ -> rải lại từ đầu
-                da_dat = []
-            r, g = rng.uniform(0.22, 0.34), rng.uniform(-1.2, 0.2)
-            p = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(p - q) > 0.14 for q in da_dat) and np.linalg.norm(p - TAM_THAP) > 0.15:
-                da_dat.append(p)
-        for a, p in zip(qadr, da_dat):
-            d.qpos[a:a + 2] = p
+        rai_coc_ngau_nhien(m, d, seed)
     mujoco.mj_forward(m, d)
-
-    act_tay = np.array([m.actuator(j).id for j in KHOP])
-    act_ngon = m.actuator("gripper").id
-    d.ctrl[act_tay] = Q_NHA
-    tcp = m.site("tcp").id
 
     nguon = [d.body(c).xpos.copy() for c in TEN_COC]
     dich = vi_tri_kim_tu_thap(np.array(TAM_THAP), np.array([1.0, 0.0, 0.0]))
@@ -166,62 +241,16 @@ def chay(xem=False, seed=None):
         viewer = mjv.launch_passive(m, d)
         viewer.cam.lookat[:] = [0.2, 0.0, 0.1]
         viewer.cam.distance, viewer.cam.azimuth, viewer.cam.elevation = 1.0, -150, -30
-    nhip = NhipXem(viewer)
+    dk = DieuKhien(m, d, ik, viewer)
+    d.ctrl[dk.act_tay] = Q_NHA
 
-    def buoc_mo_phong(n):
-        for _ in range(n):
-            mujoco.mj_step(m, d)
-            if not nhip(d):
-                raise SystemExit(0)
-
-    buoc_mo_phong(200)
-    # Tới tư thế bắt đầu (trên cốc đầu tiên) bằng KHÔNG GIAN KHỚP: IK đi thẳng từ "home" (tay duỗi ngang)
-    # dễ kẹt ở giới hạn khớp. Thử nhiều nghiệm khởi đầu, lấy nghiệm tốt nhất.
-    rng0 = np.random.default_rng(0)
-    p_dau = np.array([nguon[0][0], nguon[0][1], Z_DI])
-    q = min((ik.giai(ik.lo + (ik.hi - ik.lo) * rng0.random(6), p_dau, y_kep, so_vong=200) for _ in range(30)),
-            key=lambda k: k[1])[0]
-    n = int(2.0 / m.opt.timestep)
-    for i in range(0, n, 10):
-        d.ctrl[act_tay] = Q_NHA + muot((i + 10) / n) * (q - Q_NHA)
-        d.ctrl[act_ngon] = NGON_MO
-        buoc_mo_phong(10)
-    buoc_mo_phong(200)
-    p0 = d.site_xpos[tcp].copy()
-    y0 = d.site_xmat[tcp].reshape(3, 3)[:, 1].copy()
-    n0 = NGON_MO
-    sai_max = 0.0
-    # Khâu tích phân trên lệnh khớp (như bộ PI trong firmware servo của tay thật): actuator của Menagerie
-    # mềm (kp 10 ở cổ tay) + ma sát khớp -> cổ tay đứng lệch ~3°, đầu tay lệch ~9 mm, mà khe kẹp chỉ dư 5 mm.
-    tich = np.zeros(6)
-    for ten, p1, y1, n1, T in lap_ke_hoach(nguon, dich, y_kep):
-        n = int(T / m.opt.timestep)
-        for i in range(0, n, 10):
-            s = muot((i + 10) / n)
-            q, sai = ik.giai(q, (1 - s) * p0 + s * p1, nlerp(y0, y1, s))
-            tich = np.clip(tich + KI * (q - d.qpos[ik.qadr]), -0.15, 0.15)
-            d.ctrl[act_tay] = q + tich
-            d.ctrl[act_ngon] = (1 - s) * n0 + s * n1
-            buoc_mo_phong(10)
-        sai_max = max(sai_max, sai)
-        if DEBUG:
-            print(f"{ten:<13} lech tcp {np.linalg.norm(d.site_xpos[tcp] - p1) * 1000:5.1f} mm  "
-                  f"q_err {np.round(np.degrees(d.qpos[ik.qadr] - q), 1)}  ngon {d.qpos[m.joint('joint7').qposadr[0]] * 1000:.1f}")
-        p0, y0, n0 = p1, y1, n1
+    dk.buoc(200)
+    q = dk.toi_tu_the_dau(np.array([nguon[0][0], nguon[0][1], Z_DI]), y_kep)
+    sai_max = dk.theo_ke_hoach(q, lap_ke_hoach(nguon, dich, y_kep))
     print(f"Sai số IK lớn nhất: {sai_max * 1000:.2f} mm")
 
-    buoc_mo_phong(int(2.0 / m.opt.timestep))
-    p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
-    dat = True
-    print("\nKết quả:")
-    for i, (c, p_mong) in enumerate(zip(TEN_COC, [dich[0], dich[1], (p1 + p2) / 2 + [0, 0, CAO]]), start=1):
-        b = d.body(c)
-        lech = np.linalg.norm(b.xpos - p_mong)
-        ng = np.degrees(np.arccos(np.clip(b.xmat[8], -1, 1)))
-        ok = lech < 0.008 and ng < 3
-        dat &= ok
-        print(f"  C{i}: lệch {lech * 1000:4.1f} mm, nghiêng {ng:4.1f}° -> {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
-    print(f"Kim tự tháp: {'ĐẠT' if dat else 'KHÔNG ĐẠT'}")
+    dk.buoc(int(2.0 / m.opt.timestep))
+    dat = danh_gia(d, dich)
     if viewer is not None:
         viewer.close()
     return dat

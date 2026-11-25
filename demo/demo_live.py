@@ -78,32 +78,11 @@ class RoBotDemo(BuocDemo, X.RoBot):
 class Demo:
     def __init__(self, xem=True, seed=0, quay=None, piper=False):
         self.piper = piper
-        if piper:
-            # PiPER (bai_piper): cần model Menagerie; camera trên cao điều khiển, như xep_coc_piper_camera.py
-            sys.path.insert(0, str(GOC / "bai_piper"))
-            import xep_coc_piper_camera as C
-            self.C = C
-            self.m = C.tao_model()
-        else:
-            self.m = X.tao_model(nang_cap=True)   # luôn gắn marker; bản cũ chỉ không dùng tới
+        self.m = self.tao_model(piper)
         self.lech_enc_piper = np.zeros(6)
         self.ghi, self.anh_cuoi, self.kich_ban, self.tu_bam = None, None, [], False
         if quay:
-            import imageio
-            from PIL import ImageFont
-            self.m.vis.global_.offwidth, self.m.vis.global_.offheight = 1280, 720
-            self.rd = mujoco.Renderer(self.m, 720, 1280)
-            self.cam_quay = mujoco.MjvCamera()
-            self.cam_quay.lookat[:] = [0.22, 0.0, 0.25]      # nhìn chéo từ trước-trái: thấy cốc, tay, chỗ xếp tháp
-            self.cam_quay.distance, self.cam_quay.azimuth, self.cam_quay.elevation = 1.55, -150, -30
-            self.ghi = imageio.get_writer(quay, fps=25, quality=7, macro_block_size=8)
-            self.font = self.font_nho = None
-            for ten in ("arial.ttf", "DejaVuSans.ttf"):   # font có dấu tiếng Việt (Windows / Ubuntu)
-                try:
-                    self.font, self.font_nho = ImageFont.truetype(ten, 26), ImageFont.truetype(ten, 20)
-                    break
-                except OSError:
-                    pass
+            self.chuan_bi_quay(quay)
         self.d = mujoco.MjData(self.m)
         self.rng = np.random.default_rng(seed)
         self.seed = seed
@@ -119,15 +98,44 @@ class Demo:
         self.trang_thai = ""
         self.da_xep, self.dang_cam = set(), None
         self.dem = 0
-        self.viewer = None
-        if xem:
-            import mujoco.viewer as mjv
-            self.viewer = mjv.launch_passive(self.m, self.d, key_callback=self.phim)
-            with self.viewer.lock():
-                self.co0 = self.viewer.opt.flags.copy()
-                self.nhom0 = self.viewer.opt.geomgroup.copy()
-            self.viewer.cam.lookat[:] = [0.2, 0.05, 0.12]
-            self.viewer.cam.distance, self.viewer.cam.azimuth, self.viewer.cam.elevation = 1.5, -105, -30
+        self.viewer = self.mo_viewer() if xem else None
+
+    def tao_model(self, piper):
+        if piper:
+            # PiPER (bai_piper): cần model Menagerie; camera trên cao điều khiển, như xep_coc_piper_camera.py
+            sys.path.insert(0, str(GOC / "bai_piper"))
+            import xep_coc_piper_camera as C
+            self.C = C
+            return C.tao_model()
+        return X.tao_model(nang_cap=True)          # luôn gắn marker; bản cũ chỉ không dùng tới
+
+    def chuan_bi_quay(self, quay):
+        """Renderer + camera + file video + font cho chế độ quay video."""
+        import imageio
+        from PIL import ImageFont
+        self.m.vis.global_.offwidth, self.m.vis.global_.offheight = 1280, 720
+        self.rd = mujoco.Renderer(self.m, 720, 1280)
+        self.cam_quay = mujoco.MjvCamera()
+        self.cam_quay.lookat[:] = [0.22, 0.0, 0.25]      # nhìn chéo từ trước-trái: thấy cốc, tay, chỗ xếp tháp
+        self.cam_quay.distance, self.cam_quay.azimuth, self.cam_quay.elevation = 1.55, -150, -30
+        self.ghi = imageio.get_writer(quay, fps=25, quality=7, macro_block_size=8)
+        self.font = self.font_nho = None
+        for ten in ("arial.ttf", "DejaVuSans.ttf"):   # font có dấu tiếng Việt (Windows / Ubuntu)
+            try:
+                self.font, self.font_nho = ImageFont.truetype(ten, 26), ImageFont.truetype(ten, 20)
+                break
+            except OSError:
+                pass
+
+    def mo_viewer(self):
+        import mujoco.viewer as mjv
+        v = mjv.launch_passive(self.m, self.d, key_callback=self.phim)
+        with v.lock():
+            self.co0 = v.opt.flags.copy()
+            self.nhom0 = v.opt.geomgroup.copy()
+        v.cam.lookat[:] = [0.2, 0.05, 0.12]
+        v.cam.distance, v.cam.azimuth, v.cam.elevation = 1.5, -105, -30
+        return v
 
     # ---------------- phím ----------------
     def phim(self, ma):
@@ -153,7 +161,7 @@ class Demo:
             self.ve()
 
     def lam(self, k):
-        m, d = self.m, self.d
+        """Xử lý một phím (xem docstring đầu file)."""
         if k == "space":
             self.tam_dung = not self.tam_dung
             print("TẠM DỪNG" if self.tam_dung else "Chạy tiếp")
@@ -161,53 +169,67 @@ class Demo:
             self.tam_dung = False
             raise ChayLai()
         elif k in "123":
-            ten = TEN_COC[int(k) - 1]
-            if ten in self.da_xep or ten == self.dang_cam:
-                print(f">>> Khách dời {ten}: cốc đã xếp / đang cầm -> bỏ qua")
-                return
-            xy = self.cho_trong(ten)
-            if xy is None:
-                return
-            a = m.joint(m.body(ten).jntadr[0]).qposadr[0]
-            d.qpos[a:a + 7] = [xy[0], xy[1], 0.0, 1, 0, 0, 0]
-            d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
-            print(f">>> Khách dời {ten} tới {np.round(xy, 2)}")
+            self.khach_doi_coc(TEN_COC[int(k) - 1])
         elif k == "T":
-            ung_vien = [c for c in TEN_COC if c not in self.da_xep and c != self.dang_cam]
-            if not ung_vien:
-                print(">>> Không còn cốc nào để làm đổ")
-                return
-            ten = ung_vien[int(self.rng.integers(len(ung_vien)))]
-            dat_coc_nam(m, d, ten, d.body(ten).xpos[:2].copy(), self.rng.uniform(-np.pi, np.pi))
-            d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
-            print(f">>> Khách làm đổ {ten}")
+            self.khach_lam_do()
         elif k == "N":
             self.nhieu_manh = not self.nhieu_manh
             self.cam.nhieu = NHIEU_MANH if self.nhieu_manh else NHIEU_THUONG
             print(f">>> Nhiễu camera: {self.cam.nhieu * 1000:.0f} mm")
         elif k == "E":
-            self.lech_enc = not self.lech_enc
-            dau = self.rng.choice([-1, 1], size=len(KHOP_TAY))
-            if self.piper:
-                # PiPER có khâu tích phân bám ENCODER -> lệch encoder mô phỏng bằng sai số đọc encoder
-                # (biasprm như tay tự dựng sẽ bị khâu tích phân bù mất)
-                self.lech_enc_piper = np.radians(LECH_ENCODER) * dau * self.lech_enc
-                self.robot.lech_enc = self.lech_enc_piper.copy()
-            for i, j in enumerate(KHOP_TAY if not self.piper else []):
-                a = m.actuator(j).id
-                m.actuator_biasprm[a, 0] = (m.actuator_gainprm[a, 0] * np.radians(LECH_ENCODER) * dau[i]
-                                            if self.lech_enc else 0.0)
-            self.can_hieu_chinh = True
-            print(f">>> Encoder: {'LỆCH 2 độ' if self.lech_enc else 'chuẩn'}")
+            self.doi_lech_encoder()
         elif k == "C":
-            self.nang_cap = not self.nang_cap
-            if self.nang_cap:
-                self.can_hieu_chinh = True
-            else:
-                self.bu[:] = 0
-                self.robot.bu[:] = 0
-                self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
-            print(f">>> Chuyển sang bản {'NÂNG CẤP' if self.nang_cap else 'CŨ'}")
+            self.doi_ban()
+
+    def khach_doi_coc(self, ten):
+        m, d = self.m, self.d
+        if ten in self.da_xep or ten == self.dang_cam:
+            print(f">>> Khách dời {ten}: cốc đã xếp / đang cầm -> bỏ qua")
+            return
+        xy = self.cho_trong(ten)
+        if xy is None:
+            return
+        a = m.joint(m.body(ten).jntadr[0]).qposadr[0]
+        d.qpos[a:a + 7] = [xy[0], xy[1], 0.0, 1, 0, 0, 0]
+        d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
+        print(f">>> Khách dời {ten} tới {np.round(xy, 2)}")
+
+    def khach_lam_do(self):
+        m, d = self.m, self.d
+        ung_vien = [c for c in TEN_COC if c not in self.da_xep and c != self.dang_cam]
+        if not ung_vien:
+            print(">>> Không còn cốc nào để làm đổ")
+            return
+        ten = ung_vien[int(self.rng.integers(len(ung_vien)))]
+        dat_coc_nam(m, d, ten, d.body(ten).xpos[:2].copy(), self.rng.uniform(-np.pi, np.pi))
+        d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
+        print(f">>> Khách làm đổ {ten}")
+
+    def doi_lech_encoder(self):
+        m = self.m
+        self.lech_enc = not self.lech_enc
+        dau = self.rng.choice([-1, 1], size=len(KHOP_TAY))
+        if self.piper:
+            # PiPER có khâu tích phân bám ENCODER -> lệch encoder mô phỏng bằng sai số đọc encoder
+            # (biasprm như tay tự dựng sẽ bị khâu tích phân bù mất)
+            self.lech_enc_piper = np.radians(LECH_ENCODER) * dau * self.lech_enc
+            self.robot.lech_enc = self.lech_enc_piper.copy()
+        for i, j in enumerate(KHOP_TAY if not self.piper else []):
+            a = m.actuator(j).id
+            m.actuator_biasprm[a, 0] = (m.actuator_gainprm[a, 0] * np.radians(LECH_ENCODER) * dau[i]
+                                        if self.lech_enc else 0.0)
+        self.can_hieu_chinh = True
+        print(f">>> Encoder: {'LỆCH 2 độ' if self.lech_enc else 'chuẩn'}")
+
+    def doi_ban(self):
+        self.nang_cap = not self.nang_cap
+        if self.nang_cap:
+            self.can_hieu_chinh = True
+        else:
+            self.bu[:] = 0
+            self.robot.bu[:] = 0
+            self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
+        print(f">>> Chuyển sang bản {'NÂNG CẤP' if self.nang_cap else 'CŨ'}")
 
     def cho_trong(self, ten):
         """Chỗ ngẫu nhiên trong tầm với, cách cốc khác và khu xếp tháp >= 16 cm."""
@@ -305,7 +327,8 @@ class Demo:
         for _, p, y, z, n, T in buoc[1:]:
             rb.toi(p, n, T, y=y, z=z)
 
-    def mot_lan(self, seed):
+    def rai_coc(self, seed):
+        """Đặt lại tay + rải 3 cốc ngẫu nhiên (theo seed) trong vùng với tới, cách nhau và cách tháp."""
         m, d = self.m, self.d
         rng = np.random.default_rng(seed)
         if self.piper:                                 # model PiPER không có keyframe: đặt tay ở tư thế chờ
@@ -332,74 +355,89 @@ class Demo:
             a = m.joint(m.body(c).jntadr[0]).qposadr[0]
             d.qpos[a:a + 2] = p
         mujoco.mj_forward(m, d)
+
+    def tao_robot(self):
+        """Robot mới cho lần chạy này (giữ bộ bù đã hiệu chỉnh), hẹn sẵn các phím phá."""
         lop = type("PiperDemo", (BuocDemo, self.C.TayPiper), {}) if self.piper else RoBotDemo
-        self.robot = rb = lop(self, m, d, self.viewer)
+        self.robot = rb = lop(self, self.m, self.d, self.viewer)
         rb.bu = self.bu.copy()
         if self.piper:
             rb.lech_enc = self.lech_enc_piper.copy()
         if self.tu_bam:
             self.hen_phim(rb)
         for t, p in self.kich_ban:                     # chế độ quay video: phím hẹn sẵn theo kịch bản
-            rb.su_kien.append((d.time + t, lambda p=p: self.lenh.append(p)))
-        self.tam = d.site_xpos[m.site("dich").id][:2].copy()
+            rb.su_kien.append((self.d.time + t, lambda p=p: self.lenh.append(p)))
+        return rb
+
+    def tu_hieu_chinh(self, rb):
+        print("Tự hiệu chỉnh encoder + camera...")
+        self.can_hieu_chinh = False   # xoá TRƯỚC: bấm E giữa chừng thì lần sau hiệu chỉnh lại
+        # Đo từ trạng thái "chưa bù": nếu còn bộ bù cũ, kết quả là phần lệch CÒN LẠI chứ không
+        # phải lệch thật -> ghi đè lên bộ bù làm sai số cộng dồn mỗi lần bấm E (2 -> 4 -> 7 độ...).
+        rb.bu[:] = 0
+        self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
+        delta = tu_hieu_chinh(rb, self.cam)[0]
+        if delta is not None and np.degrees(np.abs(delta)).max() < 6:
+            self.bu = rb.bu.copy()
+            print(f"Tự hiệu chỉnh xong: lệch encoder {np.round(np.degrees(delta), 1)} độ")
+        else:                         # kết quả vô lý (bị phá giữa chừng...) -> bỏ, lần sau làm lại
+            rb.bu[:] = 0
+            self.bu[:] = 0
+            self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
+            self.can_hieu_chinh = True
+            print("Tự hiệu chỉnh không tin được -> bỏ, sẽ làm lại")
+
+    def thu_mot_lan(self, rb, i, ten, dich):
+        """Một lần nhìn - xử lý cho cốc `ten`. Trả về True khi đã đặt xong cốc."""
+        thay = self.nhin()
+        nam = [c for c, t in thay.items() if t.get("nam") and c not in self.da_xep]
+        if nam:
+            self.dung_coc(nam[0], thay[nam[0]])
+            return False
+        if ten not in thay:
+            print(f"Camera không thấy {ten}")
+            return False
+        self.dang_cam = ten
+        if not X.gap(rb, thay[ten]["goc"], self.nang_cap, self.cam):
+            return False
+        p_dat = dich[i]
+        if ten == "coc3" and "coc1" in thay and "coc2" in thay:
+            p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
+        if X.dat(rb, p_dat, self.cam, self.nang_cap):
+            self.da_xep.add(ten)
+            return True
+        return False
+
+    def xep_mot_coc(self, rb, i, ten, dich):
+        """Thử tối đa SO_LAN_THU lần cho cốc `ten`. Trả về True khi đặt xong."""
+        print(f"Xếp {ten}")
+        for _ in range(SO_LAN_THU):
+            if self.nang_cap and self.can_hieu_chinh:
+                self.tu_hieu_chinh(rb)
+            try:
+                if self.thu_mot_lan(rb, i, ten, dich):
+                    return True
+            except AssertionError as e:           # IK không tới được (cốc lăn ra ngoài tầm với)
+                print(f"Cốc ngoài tầm với ({e}) -> nhìn lại")
+                rb.toi(rb.p + [0, 0, 0.05], NGON_MO, T=0.5)
+            finally:
+                self.dang_cam = None
+        print(f"Không xếp được {ten} sau {SO_LAN_THU} lần")
+        return False
+
+    def mot_lan(self, seed):
+        """Một lần xếp tháp từ đầu. Trả về True nếu tháp đứng vững."""
+        self.rai_coc(seed)
+        rb = self.tao_robot()
+        self.tam = self.d.site_xpos[self.m.site("dich").id][:2].copy()
         dich = vi_tri_kim_tu_thap(self.tam, np.array([1.0, 0.0, 0.0]))
         self.da_xep, self.dang_cam = set(), None
-
         for i, ten in enumerate(TEN_COC):
-            print(f"Xếp {ten}")
-            for _ in range(SO_LAN_THU):
-                if self.nang_cap and self.can_hieu_chinh:
-                    print("Tự hiệu chỉnh encoder + camera...")
-                    self.can_hieu_chinh = False   # xoá TRƯỚC: bấm E giữa chừng thì lần sau hiệu chỉnh lại
-                    # Đo từ trạng thái "chưa bù": nếu còn bộ bù cũ, kết quả là phần lệch CÒN LẠI chứ không
-                    # phải lệch thật -> ghi đè lên bộ bù làm sai số cộng dồn mỗi lần bấm E (2 -> 4 -> 7 độ...).
-                    rb.bu[:] = 0
-                    self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
-                    delta = tu_hieu_chinh(rb, self.cam)[0]
-                    if delta is not None and np.degrees(np.abs(delta)).max() < 6:
-                        self.bu = rb.bu.copy()
-                        print(f"Tự hiệu chỉnh xong: lệch encoder {np.round(np.degrees(delta), 1)} độ")
-                    else:                         # kết quả vô lý (bị phá giữa chừng...) -> bỏ, lần sau làm lại
-                        rb.bu[:] = 0
-                        self.bu[:] = 0
-                        self.cam.R_sua, self.cam.t_sua = np.eye(3), np.zeros(3)
-                        self.can_hieu_chinh = True
-                        print("Tự hiệu chỉnh không tin được -> bỏ, sẽ làm lại")
-                thay = self.nhin()
-                try:
-                    nam = [c for c, t in thay.items() if t.get("nam") and c not in self.da_xep]
-                    if nam:
-                        self.dung_coc(nam[0], thay[nam[0]])
-                        continue
-                    if ten not in thay:
-                        print(f"Camera không thấy {ten}")
-                        continue
-                    self.dang_cam = ten
-                    if not X.gap(rb, thay[ten]["goc"], self.nang_cap, self.cam):
-                        continue
-                    p_dat = dich[i]
-                    if ten == "coc3" and "coc1" in thay and "coc2" in thay:
-                        p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
-                    if X.dat(rb, p_dat, self.cam, self.nang_cap):
-                        self.da_xep.add(ten)
-                        break
-                except AssertionError as e:           # IK không tới được (cốc lăn ra ngoài tầm với)
-                    print(f"Cốc ngoài tầm với ({e}) -> nhìn lại")
-                    rb.toi(rb.p + [0, 0, 0.05], NGON_MO, T=0.5)
-                finally:
-                    self.dang_cam = None
-            else:
-                print(f"Không xếp được {ten} sau {SO_LAN_THU} lần")
+            if not self.xep_mot_coc(rb, i, ten, dich):
                 return False
-
         rb.toi_khop(rb.Q_CHO, NGON_MO, T=1.5)
-        rb.buoc(int(2.0 / m.opt.timestep))
-        # Tiêu chí "tháp đứng vững" (như bai_do_ben): không cốc nào nghiêng > 3°, C1 C2 trên sàn,
-        # C3 nằm trên chúng. Không chấm vị trí tuyệt đối: nhiễu camera 10 mm làm cả tháp xê dịch vài mm.
-        p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
-        nghieng = [np.degrees(np.arccos(np.clip(d.body(c).xmat[8], -1, 1))) for c in TEN_COC]
-        return (max(nghieng) < 3 and p1[2] < 0.005 and p2[2] < 0.005 and abs(p3[2] - CAO) < 0.005
-                and np.linalg.norm(p3[:2] - (p1[:2] + p2[:2]) / 2) < 0.02)
+        rb.buoc(int(2.0 / self.m.opt.timestep))
+        return X.thap_dung_vung(self.d)[0]
 
     def chay(self, so_lan=None, tu_bam=False):
         k = 0
@@ -431,6 +469,37 @@ class Demo:
             rb.su_kien.append((self.d.time + self.rng.uniform(3, 40), lambda p=p: self.lenh.append(p)))
 
 
+class GhiTrangThai:
+    """Thay sys.stdout: in ra terminal như thường, đồng thời lấy dòng cuối làm dòng trạng thái trên màn hình."""
+
+    def __init__(self, demo, thuc):
+        self.demo, self.thuc = demo, thuc
+
+    def write(self, s):
+        self.thuc.write(s)
+        if s.strip():
+            self.demo.trang_thai = s.strip().splitlines()[-1]
+
+    def flush(self):
+        self.thuc.flush()
+
+
+def quay_video(demo, seed):
+    """Kịch bản video (thời điểm tính bằng giây mô phỏng kể từ đầu mỗi lần chạy):
+      lần 1: tự hiệu chỉnh (~23 s) -> khách làm đổ 1 cốc -> robot dựng lại -> khách dời C3, xếp xong
+      lần 2: bật lệch encoder 2° + nhiễu camera -> robot tự hiệu chỉnh lại, vẫn xếp được"""
+    for lan, (truoc, hen) in enumerate([([], [(25, "T"), (48, "3")]), (["E", "N"], [])], start=1):
+        for p in truoc:
+            demo.lam(p)
+        demo.kich_ban = hen
+        ok = demo.mot_lan(seed * 1000 + lan)
+        demo.so_lan += 1
+        demo.so_dat += ok
+        print(f"KIM TỰ THÁP: {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
+        demo.robot.buoc(int(3 / demo.m.opt.timestep))   # dừng 3 s trên kết quả
+    demo.ghi.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--thu", type=int, metavar="N", help="không cửa sổ: chạy N lần, tự bấm phím ngẫu nhiên")
@@ -441,32 +510,9 @@ def main():
 
     demo = Demo(xem=a.thu is None and a.quay is None, seed=a.seed, quay=a.quay, piper=a.piper)
     thuc = sys.stdout
-
-    class Ghi:
-        """In ra terminal như thường, đồng thời lấy dòng cuối làm dòng trạng thái trên màn hình."""
-        def write(self, s):
-            thuc.write(s)
-            if s.strip():
-                demo.trang_thai = s.strip().splitlines()[-1]
-
-        def flush(self):
-            thuc.flush()
-
-    sys.stdout = Ghi()
+    sys.stdout = GhiTrangThai(demo, thuc)
     if a.quay:
-        # Kịch bản video (thời điểm tính bằng giây mô phỏng kể từ đầu mỗi lần chạy):
-        #   lần 1: tự hiệu chỉnh (~23 s) -> khách làm đổ 1 cốc -> robot dựng lại -> khách dời C3, xếp xong
-        #   lần 2: bật lệch encoder 2° + nhiễu camera -> robot tự hiệu chỉnh lại, vẫn xếp được
-        for lan, (truoc, hen) in enumerate([([], [(25, "T"), (48, "3")]), (["E", "N"], [])], start=1):
-            for p in truoc:
-                demo.lam(p)
-            demo.kich_ban = hen
-            ok = demo.mot_lan(a.seed * 1000 + lan)
-            demo.so_lan += 1
-            demo.so_dat += ok
-            print(f"KIM TỰ THÁP: {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
-            demo.robot.buoc(int(3 / demo.m.opt.timestep))   # dừng 3 s trên kết quả
-        demo.ghi.close()
+        quay_video(demo, a.seed)
         sys.stdout = thuc
         print(f"Đã lưu {a.quay}: đạt {demo.so_dat}/{demo.so_lan}")
         return 0

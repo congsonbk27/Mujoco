@@ -210,19 +210,10 @@ def xoay_coc_tiep_tuyen(rb, mieng, truc):
     return dat - 0.045 * t_moi, t_moi
 
 
-def dung_coc(rb, mieng, truc):
-    """Dựng cốc nằm: gắp với bàn tay nghiêng 45° dọc trục cốc, nhấc, xoay 90° quanh trục ngón, đặt xuống."""
-    tam = mieng + 0.045 * truc
-    r_hat = np.array([tam[0], tam[1], 0.0]) / np.linalg.norm(tam[:2])
-    a = np.array([truc[0], truc[1], 0.0])
-    a /= np.linalg.norm(a)
-    if abs(a @ r_hat) > 0.5 or np.linalg.norm(tam[:2]) < R_DAT_XOAY[0] - 0.02:   # xuyên tâm hoặc sát đế
-        mieng, truc = xoay_coc_tiep_tuyen(rb, mieng, truc)
-        a = np.array([truc[0], truc[1], 0.0])
-        a /= np.linalg.norm(a)
+def huong_nghieng(truc, a):
+    """Hai hướng tiếp cận nghiêng ±45° dọc trục cốc (z0 khi gắp, z1 sau khi xoay), trục ngón y và phép
+    xoay R (90° quanh y). Chọn chiều sao cho sau khi xoay trục cốc (miệng -> đáy) THẲNG ĐỨNG (cốc úp)."""
     k = np.sqrt(0.5)
-    # Hai hướng tiếp cận nghiêng ±45° dọc trục cốc; xoay từ hướng này sang hướng kia (90° quanh trục ngón y)
-    # phải đưa trục cốc (miệng -> đáy) lên THẲNG ĐỨNG (cốc úp, như các cốc khác) -> chọn chiều cho đúng.
     for dau in (1, -1):
         z0, z1 = k * (-EZ) + dau * k * a, k * (-EZ) - dau * k * a
         y = np.cross(z0, z1)
@@ -230,15 +221,36 @@ def dung_coc(rb, mieng, truc):
         R = quay(y, np.pi / 2)
         if np.allclose(R @ z0, z1, atol=1e-6) and (R @ truc)[2] > 0.9:
             break
-    G = mieng + S_KEP_NAM * truc
-    tcp0 = G - LUI * z0
-    p_xoay = tcp0 + [0, 0, 0.10]
+    return z0, z1, y, R
+
+
+def tcp_dat_sau_dung(mieng, tcp0, p_xoay, R):
+    """Chỗ TCP khi đặt cốc vừa dựng. Cốc phải cách đế >= 22 cm: sát bệ thì cốc dựa vào bệ,
+    camera đo lệch ~8 cm, kẹp hụt mãi."""
     m_sau = R @ (mieng - tcp0)                       # vành miệng so với TCP, sau khi xoay
     tcp_dat = np.array([p_xoay[0], p_xoay[1], 0.004 - m_sau[2]])
-    # Chỗ đặt cốc vừa dựng phải cách đế >= 22 cm: sát bệ thì cốc dựa vào bệ, camera đo lệch ~8 cm, kẹp hụt mãi
     mieng_dat = tcp_dat[:2] + m_sau[:2]
     if np.linalg.norm(mieng_dat) < 0.22:
         tcp_dat[:2] += mieng_dat / np.linalg.norm(mieng_dat) * (0.22 - np.linalg.norm(mieng_dat))
+    return tcp_dat
+
+
+def truc_ngang(truc):
+    a = np.array([truc[0], truc[1], 0.0])
+    return a / np.linalg.norm(a)
+
+
+def dung_coc(rb, mieng, truc):
+    """Dựng cốc nằm: gắp với bàn tay nghiêng 45° dọc trục cốc, nhấc, xoay 90° quanh trục ngón, đặt xuống."""
+    tam = mieng + 0.045 * truc
+    r_hat = np.array([tam[0], tam[1], 0.0]) / np.linalg.norm(tam[:2])
+    if abs(truc_ngang(truc) @ r_hat) > 0.5 or np.linalg.norm(tam[:2]) < R_DAT_XOAY[0] - 0.02:   # xuyên tâm / sát đế
+        mieng, truc = xoay_coc_tiep_tuyen(rb, mieng, truc)
+    z0, z1, y, R = huong_nghieng(truc, truc_ngang(truc))
+    G = mieng + S_KEP_NAM * truc
+    tcp0 = G - LUI * z0
+    p_xoay = tcp0 + [0, 0, 0.10]
+    tcp_dat = tcp_dat_sau_dung(mieng, tcp0, p_xoay, R)
     print("  dựng cốc: gắp nghiêng 45°, xoay 90° quanh trục ngón")
     # Tới trên cao (tay chúc xuống) bằng không gian khớp rồi mới hạ + nghiêng theo đường thẳng: đi thẳng
     # trong không gian khớp tới điểm gắp thấp thì ngón quét ngang qua cốc bên cạnh (đã gặp: hất đổ C1).
@@ -261,7 +273,8 @@ def quay(truc, goc):
     return np.eye(3) + np.sin(goc) * K + (1 - np.cos(goc)) * K @ K
 
 
-def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, pha_do=False):
+def tao_canh(seed, do_coc):
+    """Model + data: 3 cốc ngẫu nhiên (seed) quanh tháp, tuỳ chọn 1 cốc đổ, tay ở tư thế chờ."""
     m = tao_model()
     d = mujoco.MjData(m)
     qadr = {c: m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC}
@@ -285,34 +298,27 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, p
     d.qpos[[m.joint(j).qposadr[0] for j in P.KHOP]] = TayPiper.Q_CHO
     d.ctrl[[m.actuator(j).id for j in P.KHOP]] = TayPiper.Q_CHO
     mujoco.mj_forward(m, d)
+    return m, d, rng
 
-    viewer = None
-    if xem:
-        import mujoco.viewer as mjv
-        viewer = mjv.launch_passive(m, d)
-        viewer.cam.lookat[:] = [0.15, 0.0, 0.1]
-        viewer.cam.distance, viewer.cam.azimuth, viewer.cam.elevation = 1.1, -150, -30
-    rb = TayPiper(m, d, viewer)
-    rb.buoc(300)                                     # cốc đổ nằm yên
-    if lech_encoder:
-        rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
-        print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ")
-    cam = CameraRealSense(m, seed=0 if seed is None else seed)
-    rb.gan_cam_hien(("REALSENSE TREN CAO (dieu khien)", cam),
-                    ("CAMERA CO TAY (chi xem)", CameraRealSense(m, "realsense_cotay")))
-    if nang_cap:
-        delta = tu_hieu_chinh(rb, cam)[0]
-        print("Tự hiệu chỉnh: " + ("không đủ mẫu marker" if delta is None
-                                   else f"lệch encoder ước lượng {np.round(np.degrees(delta), 1)} độ"))
 
-    dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
+def mo_viewer(m, d):
+    import mujoco.viewer as mjv
+    viewer = mjv.launch_passive(m, d)
+    viewer.cam.lookat[:] = [0.15, 0.0, 0.1]
+    viewer.cam.distance, viewer.cam.azimuth, viewer.cam.elevation = 1.1, -150, -30
+    return viewer
+
+
+def vong_xep(rb, cam, rng, dich, nang_cap, pha_do):
+    """Vòng nhìn - xử lý tối đa 18 lần cho tới khi đủ 3 cốc trong tháp. Trả về True khi xong."""
+    m, d = rb.m, rb.d
     if pha_do:
         rb.khi_cho = {"coc1": lambda: xo_do(m, d, rng, "coc3", "khách xô đổ C3 (chưa xếp) khi tay đang chở C1"),
                       "coc3": lambda: tuot(rb, m, d)}
     da_xep, da_xo = set(), False
     for _ in range(18):
         if len(da_xep) == 3:
-            break
+            return True
         if pha_do and not da_xo and {"coc1", "coc2"} <= da_xep:
             da_xo = True                                  # xô C1 khỏi tháp, lăn ra phía ngoài (-x, xa C2)
             xo_do(m, d, rng, "coc1", "khách xô đổ C1 của tầng dưới", dxy=(-0.09, 0.0), goc=np.pi)
@@ -329,17 +335,33 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, p
             print(f"  {e}")
             rb.toi(rb.p + [0, 0, 0.05], rb.NGON_MO, T=0.5)
         rb.dang_cam = None
-    else:
-        print("Không xếp xong sau 18 lần thử")
+    print("Không xếp xong sau 18 lần thử")
+    return False
+
+
+def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, pha_do=False):
+    m, d, rng = tao_canh(seed, do_coc)
+    viewer = mo_viewer(m, d) if xem else None
+    rb = TayPiper(m, d, viewer)
+    rb.buoc(300)                                     # cốc đổ nằm yên
+    if lech_encoder:
+        rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
+        print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ")
+    cam = CameraRealSense(m, seed=0 if seed is None else seed)
+    rb.gan_cam_hien(("REALSENSE TREN CAO (dieu khien)", cam),
+                    ("CAMERA CO TAY (chi xem)", CameraRealSense(m, "realsense_cotay")))
+    if nang_cap:
+        delta = tu_hieu_chinh(rb, cam)[0]
+        print("Tự hiệu chỉnh: " + ("không đủ mẫu marker" if delta is None
+                                   else f"lệch encoder ước lượng {np.round(np.degrees(delta), 1)} độ"))
+
+    dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
+    if not vong_xep(rb, cam, rng, dich, nang_cap, pha_do):
         return False
     rb.toi_khop(rb.Q_CHO, rb.NGON_MO, T=1.5)
     rb.buoc(int(2.0 / m.opt.timestep))
-    # Tiêu chí "tháp đứng vững" như bai_do_ben / demo
-    p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
-    nghieng = [np.degrees(np.arccos(np.clip(d.body(c).xmat[8], -1, 1))) for c in TEN_COC]
-    ok = (max(nghieng) < 3 and p1[2] < 0.005 and p2[2] < 0.005 and abs(p3[2] - CAO) < 0.005
-          and np.linalg.norm(p3[:2] - (p1[:2] + p2[:2]) / 2) < 0.02)
-    print(f"Kim tự tháp: {'ĐẠT' if ok else 'KHÔNG ĐẠT'} (nghiêng tối đa {max(nghieng):.1f}°)")
+    ok, nghieng = X.thap_dung_vung(d)
+    print(f"Kim tự tháp: {'ĐẠT' if ok else 'KHÔNG ĐẠT'} (nghiêng tối đa {nghieng:.1f}°)")
     if viewer is not None:
         viewer.close()
     return ok
@@ -402,6 +424,7 @@ def lam_mot_lan(rb, cam, thay, ten, i, dich, da_xep, nang_cap, d):
         da_xep.add(ten)
         return True
     return False
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

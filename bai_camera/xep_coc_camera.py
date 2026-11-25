@@ -305,111 +305,108 @@ def dat(robot, p_dat, cam=None, nang_cap=False):
     return True
 
 
-def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None, nang_cap=False):
-    """tuy_chinh(m, d, cam): hàm tuỳ chọn, gọi trước khi chạy để bơm sai số (xem bai_do_ben).
-    nang_cap: bật phát hiện rơi cốc + visual servoing khi đặt (xem README, mục Nâng cấp)."""
-    m = tao_model(nang_cap)
-    d = mujoco.MjData(m)
-    mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
-    qadr = {c: m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC}
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-        da_dat = []
-        while len(da_dat) < 3:
-            r, goc = rng.uniform(0.28, 0.5), rng.uniform(-1.3, 0.1)
-            p = np.array([r * np.cos(goc), r * np.sin(goc)])
-            if all(np.linalg.norm(p - q) > 0.16 for q in da_dat):
-                da_dat.append(p)
-        for c, p in zip(TEN_COC, da_dat):
-            d.qpos[qadr[c]:qadr[c] + 2] = p
-    mujoco.mj_forward(m, d)
+def rai_coc_ngau_nhien(m, d, seed):
+    """Rải 3 cốc ngẫu nhiên trong vành 0.28-0.5 m quanh đế, cách nhau > 16 cm."""
+    rng = np.random.default_rng(seed)
+    da_dat = []
+    while len(da_dat) < 3:
+        r, goc = rng.uniform(0.28, 0.5), rng.uniform(-1.3, 0.1)
+        p = np.array([r * np.cos(goc), r * np.sin(goc)])
+        if all(np.linalg.norm(p - q) > 0.16 for q in da_dat):
+            da_dat.append(p)
+    for c, p in zip(TEN_COC, da_dat):
+        a = m.joint(m.body(c).jntadr[0]).qposadr[0]
+        d.qpos[a:a + 2] = p
 
-    viewer = None
-    if xem:
-        import mujoco.viewer as mjv
-        viewer = mjv.launch_passive(m, d)
-    robot = RoBot(m, d, viewer, mujoco.Renderer(m, 270, 360) if gif else None)
-    cam = CameraRealSense(m, seed=0 if seed is None else seed)
-    if tuy_chinh is not None:
-        tuy_chinh(m, d, cam)
-    anh = []
-    if nang_cap:
-        delta, (R_sua, b_sua), rms, n = (lambda k: k if k[0] is not None else (None, (None, None), None, k[3]))(
-            tu_hieu_chinh(robot, cam))
-        if delta is None:
-            print(f"Tự hiệu chỉnh: chỉ thu được {n} mẫu marker, bỏ qua")
-        else:
-            goc = np.degrees(np.arccos(np.clip((np.trace(R_sua) - 1) / 2, -1, 1)))
-            print(f"Tự hiệu chỉnh ({n} mẫu): lệch encoder = {np.round(np.degrees(delta), 2)} độ; "
-                  f"sửa camera: dịch {np.round(b_sua * 1000, 1)} mm, xoay {goc:.2f} độ; "
-                  f"sai số còn lại (rms x,y,z) = {np.round(rms * 1000, 1)} mm")
 
-    def cho_trong(ten, goi_y):
-        """Chọn chỗ đầu tiên trong goi_y cách mọi cốc khác >= 14 cm (không đặt cốc chồng lấn cốc)."""
-        khac = [d.body(c).xpos[:2] for c in TEN_COC if c != ten]
-        for xy in goi_y:
-            if all(np.linalg.norm(np.asarray(xy) - k) > 0.14 for k in khac):
-                return np.asarray(xy, float)
-        return None
+def chay_tu_hieu_chinh(robot, cam):
+    """Tự hiệu chỉnh encoder + camera lúc khởi động, in kết quả."""
+    delta, (R_sua, b_sua), rms, n = (lambda k: k if k[0] is not None else (None, (None, None), None, k[3]))(
+        tu_hieu_chinh(robot, cam))
+    if delta is None:
+        print(f"Tự hiệu chỉnh: chỉ thu được {n} mẫu marker, bỏ qua")
+        return
+    goc = np.degrees(np.arccos(np.clip((np.trace(R_sua) - 1) / 2, -1, 1)))
+    print(f"Tự hiệu chỉnh ({n} mẫu): lệch encoder = {np.round(np.degrees(delta), 2)} độ; "
+          f"sửa camera: dịch {np.round(b_sua * 1000, 1)} mm, xoay {goc:.2f} độ; "
+          f"sai số còn lại (rms x,y,z) = {np.round(rms * 1000, 1)} mm")
 
-    def doi_coc(ten, xy, ly_do):
-        if xy is None:
-            print("    >>> NGƯỜI PHÁ: không còn chỗ trống, bỏ qua")
-            return
-        a = qadr[ten]
-        d.qpos[a:a + 3] = [xy[0], xy[1], 0.0]
-        d.qpos[a + 3:a + 7] = [1, 0, 0, 0]
-        d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
-        print(f"    >>> NGƯỜI PHÁ: {ly_do}, dời {ten} tới {np.round(xy, 3)}")
 
-    tam = d.site_xpos[m.site("dich").id][:2].copy()
-    dich = vi_tri_kim_tu_thap(tam, np.array([1.0, 0.0, 0.0]))
+def cho_trong(d, ten, goi_y):
+    """Chọn chỗ đầu tiên trong goi_y cách mọi cốc khác >= 14 cm (không đặt cốc chồng lấn cốc)."""
+    khac = [d.body(c).xpos[:2] for c in TEN_COC if c != ten]
+    for xy in goi_y:
+        if all(np.linalg.norm(np.asarray(xy) - k) > 0.14 for k in khac):
+            return np.asarray(xy, float)
+    return None
 
-    for i, ten in enumerate(TEN_COC):
-        print(f"\n== Cốc {ten} ==")
-        for lan in range(1, SO_LAN_THU + 1):
-            thay = nhin(robot, cam, anh)
-            if ten not in thay:
-                print(f"    camera không thấy {ten}!")
-                return False
-            p_coc = thay[ten]["goc"]
-            p_that = d.body(ten).xpos
-            print(f"  lần {lan}: camera thấy {ten} ở {np.round(p_coc, 3)} "
-                  f"(sai số so với thật {np.linalg.norm(p_coc - p_that)*1000:.1f} mm)")
 
-            if pha and ten == "coc3" and lan == 1:
-                # Phá kiểu 2: đúng lúc tay đang hạ xuống, kéo cốc đi 12 cm -> tay sẽ kẹp hụt
-                goi_y = [p_that[:2] + 0.12 * np.array([np.cos(a), np.sin(a)])
-                         for a in np.linspace(-np.pi, np.pi, 12, endpoint=False)
-                         if 0.27 < np.linalg.norm(p_that[:2] + 0.12 * np.array([np.cos(a), np.sin(a)])) < 0.52]
-                robot.su_kien.append((d.time + 2.0, lambda g=goi_y: doi_coc(
-                    "coc3", cho_trong("coc3", g), "tay đang hạ xuống")))
-            if not gap(robot, p_coc, nang_cap, cam):
-                continue
-            if pha and ten == "coc1" and lan == 1:
-                # Phá kiểu 1: khi tay đang chở C1, có người dời C3 sang chỗ khác
-                # mọi chỗ gợi ý đều cách đế 0.3-0.46 m: trong tầm với của tay ở độ cao di chuyển
-                goi_y = [[0.22, -0.30], [0.25, -0.38], [0.42, -0.18], [0.35, 0.0], [0.12, -0.36]]
-                robot.su_kien.append((d.time + 1.0, lambda: doi_coc(
-                    "coc3", cho_trong("coc3", goi_y), "tay đang chở C1")))
+def doi_coc(m, d, ten, xy, ly_do):
+    """Người phá: dời cốc `ten` (đứng) tới xy."""
+    if xy is None:
+        print("    >>> NGƯỜI PHÁ: không còn chỗ trống, bỏ qua")
+        return
+    a = m.joint(m.body(ten).jntadr[0]).qposadr[0]
+    d.qpos[a:a + 3] = [xy[0], xy[1], 0.0]
+    d.qpos[a + 3:a + 7] = [1, 0, 0, 0]
+    d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
+    print(f"    >>> NGƯỜI PHÁ: {ly_do}, dời {ten} tới {np.round(xy, 3)}")
 
-            p_dat = dich[i]
-            if ten == "coc3" and "coc1" in thay and "coc2" in thay:
-                # Vòng kín: đặt C3 vào giữa vị trí THỰC của C1, C2 (đo trong ảnh vừa chụp trước khi
-                # gắp C3) chứ không phải vị trí dự kiến.
-                p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
-                print(f"  camera đo C1, C2 -> đặt C3 tại {np.round(p_dat, 3)} (dự kiến {np.round(dich[2], 3)})")
-            if dat(robot, p_dat, cam, nang_cap):
-                break
-        else:
-            print("  Gắp thất bại quá số lần thử")
+
+def hen_pha_khi_ha(robot, m, d, p_that):
+    """Phá kiểu 2: đúng lúc tay đang hạ xuống, kéo C3 đi 12 cm -> tay sẽ kẹp hụt."""
+    goi_y = [p_that[:2] + 0.12 * np.array([np.cos(a), np.sin(a)])
+             for a in np.linspace(-np.pi, np.pi, 12, endpoint=False)
+             if 0.27 < np.linalg.norm(p_that[:2] + 0.12 * np.array([np.cos(a), np.sin(a)])) < 0.52]
+    robot.su_kien.append((d.time + 2.0, lambda g=goi_y: doi_coc(
+        m, d, "coc3", cho_trong(d, "coc3", g), "tay đang hạ xuống")))
+
+
+def hen_pha_khi_cho(robot, m, d):
+    """Phá kiểu 1: khi tay đang chở C1, có người dời C3 sang chỗ khác.
+    Mọi chỗ gợi ý đều cách đế 0.3-0.46 m: trong tầm với của tay ở độ cao di chuyển."""
+    goi_y = [[0.22, -0.30], [0.25, -0.38], [0.42, -0.18], [0.35, 0.0], [0.12, -0.36]]
+    robot.su_kien.append((d.time + 1.0, lambda: doi_coc(
+        m, d, "coc3", cho_trong(d, "coc3", goi_y), "tay đang chở C1")))
+
+
+def cho_dat(ten, thay, dich_i, dich):
+    """Chỗ đặt cốc. Vòng kín cho C3: đặt vào giữa vị trí THỰC của C1, C2 (đo trong ảnh vừa chụp
+    trước khi gắp C3) chứ không phải vị trí dự kiến."""
+    if ten == "coc3" and "coc1" in thay and "coc2" in thay:
+        p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
+        print(f"  camera đo C1, C2 -> đặt C3 tại {np.round(p_dat, 3)} (dự kiến {np.round(dich[2], 3)})")
+        return p_dat
+    return dich_i
+
+
+def xep_mot_coc(robot, cam, anh, i, ten, dich, pha, nang_cap):
+    """Nhìn - gắp - đặt cốc thứ i, thử tối đa SO_LAN_THU lần.
+    Trả về True khi đặt xong, False khi camera không thấy cốc hoặc hết số lần thử."""
+    m, d = robot.m, robot.d
+    for lan in range(1, SO_LAN_THU + 1):
+        thay = nhin(robot, cam, anh)
+        if ten not in thay:
+            print(f"    camera không thấy {ten}!")
             return False
+        p_coc = thay[ten]["goc"]
+        p_that = d.body(ten).xpos
+        print(f"  lần {lan}: camera thấy {ten} ở {np.round(p_coc, 3)} "
+              f"(sai số so với thật {np.linalg.norm(p_coc - p_that)*1000:.1f} mm)")
+        if pha and ten == "coc3" and lan == 1:
+            hen_pha_khi_ha(robot, m, d, p_that)
+        if not gap(robot, p_coc, nang_cap, cam):
+            continue
+        if pha and ten == "coc1" and lan == 1:
+            hen_pha_khi_cho(robot, m, d)
+        if dat(robot, cho_dat(ten, thay, dich[i], dich), cam, nang_cap):
+            return True
+    print("  Gắp thất bại quá số lần thử")
+    return False
 
-    robot.toi_khop(robot.Q_CHO, T=1.5)
-    print("\nChờ 2 s kiểm tra độ vững...")
-    robot.buoc(int(2.0 / m.opt.timestep))
 
-    # ---- Đánh giá: so với vị trí đúng tính từ vị trí THỰC của 2 cốc dưới ----
+def danh_gia_thap(d, dich):
+    """So từng cốc với vị trí đúng tính từ vị trí THỰC của 2 cốc dưới. Trả về True nếu đạt."""
     p1, p2, p3 = (d.body(c).xpos.copy() for c in TEN_COC)
     ok = True
     print("\nKết quả:")
@@ -423,14 +420,64 @@ def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None, nang_cap=Fa
         print(f"  {ten}: ở {np.round(p, 3)}, lệch {lech*1000:4.1f} mm, nghiêng {nghieng:4.1f} độ"
               f" -> {'ĐẠT' if dung else 'KHÔNG ĐẠT'}")
     print(f"Kim tự tháp: {'ĐẠT' if ok else 'KHÔNG ĐẠT'}")
+    return ok
 
+
+def thap_dung_vung(d):
+    """Tiêu chí "tháp đứng vững" (như bai_do_ben): không cốc nào nghiêng > 3°, C1 C2 trên sàn,
+    C3 nằm trên chúng. Không chấm vị trí tuyệt đối: nhiễu camera 10 mm làm cả tháp xê dịch vài mm.
+    Trả về (đạt, góc nghiêng lớn nhất)."""
+    p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
+    nghieng = [np.degrees(np.arccos(np.clip(d.body(c).xmat[8], -1, 1))) for c in TEN_COC]
+    ok = (max(nghieng) < 3 and p1[2] < 0.005 and p2[2] < 0.005 and abs(p3[2] - CAO) < 0.005
+          and np.linalg.norm(p3[:2] - (p1[:2] + p2[:2]) / 2) < 0.02)
+    return ok, max(nghieng)
+
+
+def luu_gif(robot, cam, anh):
+    from PIL import Image
+    hinh = [Image.fromarray(k) for k in robot.khung_hinh]
+    hinh[0].save(THU_MUC / "xep_coc_camera.gif", save_all=True, append_images=hinh[1:],
+                 duration=50, loop=0)
+    ve_anh_camera(cam, anh[0], THU_MUC / "camera_realsense.png")
+    print(f"Đã lưu xep_coc_camera.gif, camera_realsense.png")
+
+
+def chay(xem=False, gif=False, seed=None, pha=False, tuy_chinh=None, nang_cap=False):
+    """tuy_chinh(m, d, cam): hàm tuỳ chọn, gọi trước khi chạy để bơm sai số (xem bai_do_ben).
+    nang_cap: bật phát hiện rơi cốc + visual servoing khi đặt (xem README, mục Nâng cấp)."""
+    m = tao_model(nang_cap)
+    d = mujoco.MjData(m)
+    mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
+    if seed is not None:
+        rai_coc_ngau_nhien(m, d, seed)
+    mujoco.mj_forward(m, d)
+
+    viewer = None
+    if xem:
+        import mujoco.viewer as mjv
+        viewer = mjv.launch_passive(m, d)
+    robot = RoBot(m, d, viewer, mujoco.Renderer(m, 270, 360) if gif else None)
+    cam = CameraRealSense(m, seed=0 if seed is None else seed)
+    if tuy_chinh is not None:
+        tuy_chinh(m, d, cam)
+    anh = []
+    if nang_cap:
+        chay_tu_hieu_chinh(robot, cam)
+
+    tam = d.site_xpos[m.site("dich").id][:2].copy()
+    dich = vi_tri_kim_tu_thap(tam, np.array([1.0, 0.0, 0.0]))
+    for i, ten in enumerate(TEN_COC):
+        print(f"\n== Cốc {ten} ==")
+        if not xep_mot_coc(robot, cam, anh, i, ten, dich, pha, nang_cap):
+            return False
+
+    robot.toi_khop(robot.Q_CHO, T=1.5)
+    print("\nChờ 2 s kiểm tra độ vững...")
+    robot.buoc(int(2.0 / m.opt.timestep))
+    ok = danh_gia_thap(d, dich)
     if gif:
-        from PIL import Image
-        hinh = [Image.fromarray(k) for k in robot.khung_hinh]
-        hinh[0].save(THU_MUC / "xep_coc_camera.gif", save_all=True, append_images=hinh[1:],
-                     duration=50, loop=0)
-        ve_anh_camera(cam, anh[0], THU_MUC / "camera_realsense.png")
-        print(f"Đã lưu xep_coc_camera.gif, camera_realsense.png")
+        luu_gif(robot, cam, anh)
     if viewer is not None:
         viewer.close()
     return ok

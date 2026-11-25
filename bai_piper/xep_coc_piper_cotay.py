@@ -170,53 +170,39 @@ def dat(rb, p_dat):
     return True
 
 
-def chay(xem=False, seed=None, do_coc=False, lech_encoder=0.0, pha_do=False):
-    m = tao_model()
-    d = mujoco.MjData(m)
-    rng = np.random.default_rng(seed)
-    qadr = {c: m.joint(m.body(c).jntadr[0]).qposadr[0] for c in TEN_COC}
-    if seed is not None:
-        da_dat, lan = [], 0
-        while len(da_dat) < 3:
-            lan += 1
-            if lan % 200 == 0:
-                da_dat = []
-            r, g = rng.uniform(0.22, 0.34), rng.uniform(-1.2, 0.2)
-            p = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(p - q) > 0.15 for q in da_dat) and np.linalg.norm(p - P.TAM_THAP) > 0.15:
-                da_dat.append(p)
-        for c, p in zip(TEN_COC, da_dat):
-            d.qpos[qadr[c]:qadr[c] + 2] = p
-    if do_coc:
-        ten = TEN_COC[int(rng.integers(3))]
-        C.dat_coc_nam(m, d, ten, d.qpos[qadr[ten]:qadr[ten] + 2].copy(), rng.uniform(-np.pi, np.pi))
-        print(f"{ten} bị ĐỔ")
-    d.qpos[[m.joint(j).qposadr[0] for j in P.KHOP]] = C.TayPiper.Q_CHO
-    d.ctrl[[m.actuator(j).id for j in P.KHOP]] = C.TayPiper.Q_CHO
-    mujoco.mj_forward(m, d)
+def lam_mot_lan(rb, cam, thay, ten, dich, da_xep):
+    """Một lần thử với cốc `ten` sau khi quét: dựng cốc nằm (nếu có), hoặc gắp + đặt `ten`."""
+    nam = [c for c, t in thay.items() if t.get("nam") and c not in da_xep]
+    if nam:
+        print(f"  camera thấy {nam[0]} NẰM ĐỔ")
+        C.dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"])
+        return
+    if ten not in thay:
+        print(f"  quét không thấy {ten}")
+        return
+    p_dat = dich[TEN_COC.index(ten)]
+    if ten == "coc3":
+        p_dat = do_thap(rb, cam)
+        if p_dat is None:
+            print("  nhìn gần tháp: không thấy đủ C1, C2 -> quét lại")
+            return
+    rb.dang_cam = ten
+    if not gap(rb, cam, ten, thay[ten]["goc"]):
+        return
+    if dat(rb, p_dat):
+        da_xep.add(ten)
 
-    viewer = None
-    if xem:
-        import mujoco.viewer as mjv
-        viewer = mjv.launch_passive(m, d)
-        viewer.cam.lookat[:] = [0.15, 0.0, 0.1]
-        viewer.cam.distance, viewer.cam.azimuth, viewer.cam.elevation = 1.1, -150, -30
-    rb = C.TayPiper(m, d, viewer)
-    rb.buoc(300)
-    if lech_encoder:
-        rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
-        print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ (KHÔNG tự hiệu chỉnh)")
-    cam = CameraCoTay(m, "realsense_cotay", seed=0 if seed is None else seed)
-    rb.gan_cam_hien(("CAMERA CO TAY (dieu khien)", cam), ("REALSENSE TREN CAO (chi xem)", CameraRealSense(m)))
 
-    dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
+def vong_xep(rb, cam, rng, dich, pha_do):
+    """Vòng quét - xử lý tối đa 18 lần cho tới khi đủ 3 cốc trong tháp. Trả về True khi xong."""
+    m, d = rb.m, rb.d
     if pha_do:
         rb.khi_cho = {"coc1": lambda: C.xo_do(m, d, rng, "coc3", "khách xô đổ C3 (chưa xếp) khi tay đang chở C1"),
                       "coc3": lambda: C.tuot(rb, m, d)}
     da_xep, da_xo = set(), False
     for _ in range(18):
         if len(da_xep) == 3:
-            break
+            return True
         if pha_do and not da_xo and {"coc1", "coc2"} <= da_xep:
             da_xo = True
             C.xo_do(m, d, rng, "coc1", "khách xô đổ C1 của tầng dưới", dxy=(-0.09, 0.0), goc=np.pi)
@@ -230,41 +216,34 @@ def chay(xem=False, seed=None, do_coc=False, lech_encoder=0.0, pha_do=False):
             print(f"  chưa thấy {can_tim} -> quét rộng thêm")
             tim_them(rb, cam, thay, can_tim)
         try:
-            nam = [c for c, t in thay.items() if t.get("nam") and c not in da_xep]
-            if nam:
-                print(f"  camera thấy {nam[0]} NẰM ĐỔ")
-                C.dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"])
-                continue
-            if ten not in thay:
-                print(f"  quét không thấy {ten}")
-                continue
-            p_dat = dich[TEN_COC.index(ten)]
-            if ten == "coc3":
-                p_dat = do_thap(rb, cam)
-                if p_dat is None:
-                    print("  nhìn gần tháp: không thấy đủ C1, C2 -> quét lại")
-                    continue
-            rb.dang_cam = ten
-            if not gap(rb, cam, ten, thay[ten]["goc"]):
-                continue
-            if dat(rb, p_dat):
-                da_xep.add(ten)
+            lam_mot_lan(rb, cam, thay, ten, dich, da_xep)
         except AssertionError as e:                      # cốc lăn ra ngoài tầm với
             print(f"  {e}")
             rb.toi(rb.p + [0, 0, 0.05], rb.NGON_MO, T=0.5)
         finally:
             rb.dang_cam = None
-    else:
-        print("Không xếp xong sau 18 lần thử")
-        return False
+    print("Không xếp xong sau 18 lần thử")
+    return False
 
+
+def chay(xem=False, seed=None, do_coc=False, lech_encoder=0.0, pha_do=False):
+    m, d, rng = C.tao_canh(seed, do_coc)
+    viewer = C.mo_viewer(m, d) if xem else None
+    rb = C.TayPiper(m, d, viewer)
+    rb.buoc(300)
+    if lech_encoder:
+        rb.lech_enc = np.radians(lech_encoder) * rng.choice([-1, 1], size=6)
+        print(f"Encoder lệch {np.round(np.degrees(rb.lech_enc), 1)} độ (KHÔNG tự hiệu chỉnh)")
+    cam = CameraCoTay(m, "realsense_cotay", seed=0 if seed is None else seed)
+    rb.gan_cam_hien(("CAMERA CO TAY (dieu khien)", cam), ("REALSENSE TREN CAO (chi xem)", CameraRealSense(m)))
+
+    dich = vi_tri_kim_tu_thap(np.array(P.TAM_THAP), np.array([1.0, 0.0, 0.0]))
+    if not vong_xep(rb, cam, rng, dich, pha_do):
+        return False
     rb.toi_khop(rb.Q_CHO, rb.NGON_MO, T=1.5)
     rb.buoc(int(2.0 / m.opt.timestep))
-    p1, p2, p3 = (d.body(c).xpos for c in TEN_COC)
-    nghieng = [np.degrees(np.arccos(np.clip(d.body(c).xmat[8], -1, 1))) for c in TEN_COC]
-    ok = (max(nghieng) < 3 and p1[2] < 0.005 and p2[2] < 0.005 and abs(p3[2] - CAO) < 0.005
-          and np.linalg.norm(p3[:2] - (p1[:2] + p2[:2]) / 2) < 0.02)
-    print(f"Kim tự tháp: {'ĐẠT' if ok else 'KHÔNG ĐẠT'} (nghiêng tối đa {max(nghieng):.1f}°)")
+    ok, nghieng = X.thap_dung_vung(d)
+    print(f"Kim tự tháp: {'ĐẠT' if ok else 'KHÔNG ĐẠT'} (nghiêng tối đa {nghieng:.1f}°)")
     if viewer is not None:
         viewer.close()
     return ok
