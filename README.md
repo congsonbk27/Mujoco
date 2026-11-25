@@ -3,6 +3,7 @@
 Các bài học MuJoCo.
 
 | Bài | Nội dung |
+| [bai_piper](bai_piper/) | Xếp kim tự tháp với tay thật AgileX PiPER (model MuJoCo Menagerie): đặt trên bệ 13 cm, kẹp gần đỉnh cốc, đi vòng quanh đế. Cần `git clone --depth 1 https://github.com/google-deepmind/mujoco_menagerie bai_piper/mujoco_menagerie` |
 | [bai_coc_nam](bai_coc_nam/) | Cốc bị đổ nằm ngang: gắp ngang thân, xoay bàn tay 90° dựng cốc đứng rồi xếp kim tự tháp (cần 6DOF). `python bai_coc_nam/coc_nam.py --xem --ngau-nhien 3` |
 |---|---|
 | [bai_gap_do](bai_gap_do/) | Cánh tay robot 5 bậc tự do gắp và đặt vật: IK Damped Least Squares, lập quỹ đạo, kẹp bằng ma sát |

@@ -29,7 +29,7 @@ import numpy as np
 THU_MUC = pathlib.Path(__file__).parent
 sys.path.insert(0, str(THU_MUC.parent / "bai_gap_do"))
 sys.path.insert(0, str(THU_MUC.parent / "bai_xep_coc"))
-from gap_do import KHOP_TAY, GiaiIK, muot, nlerp  # noqa: E402
+from gap_do import KHOP_TAY, GiaiIK, NhipXem, muot, nlerp  # noqa: E402
 from xep_coc import (MODEL_XML, NGON_MO, NGON_DONG, TEN_COC, Z_KEP, Z_DI,  # noqa: E402
                      lap_ke_hoach, vi_tri_kim_tu_thap)
 
@@ -126,15 +126,13 @@ def chay(xem=False, seed=None):
     if xem:
         import mujoco.viewer as mjv
         viewer = mjv.launch_passive(m, d)
+    nhip = NhipXem(viewer)
 
     def buoc_mo_phong(n):
         for _ in range(n):
             mujoco.mj_step(m, d)
-            if viewer is not None:
-                if not viewer.is_running():
-                    raise SystemExit(0)
-                viewer.sync()
-                time.sleep(m.opt.timestep)
+            if not nhip(d):
+                raise SystemExit(0)
 
     q = d.qpos[ik.qadr].copy()
     R = d.site_xmat[tcp].reshape(3, 3)

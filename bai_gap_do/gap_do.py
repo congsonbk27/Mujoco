@@ -44,14 +44,15 @@ class GiaiIK:
     Dùng một MjData riêng để tính toán, không ảnh hưởng mô phỏng thật.
     """
 
-    def __init__(self, model):
+    def __init__(self, model, khop=KHOP_TAY):
+        """khop: tên 6 khớp tham gia IK (mặc định cánh tay tự dựng; bai_piper truyền joint1..joint6)."""
         self.m = model
         self.d = mujoco.MjData(model)
         self.site = model.site("tcp").id
-        self.dof = np.array([model.joint(j).dofadr[0] for j in KHOP_TAY])
-        self.qadr = np.array([model.joint(j).qposadr[0] for j in KHOP_TAY])
-        self.lo = np.array([model.joint(j).range[0] for j in KHOP_TAY])
-        self.hi = np.array([model.joint(j).range[1] for j in KHOP_TAY])
+        self.dof = np.array([model.joint(j).dofadr[0] for j in khop])
+        self.qadr = np.array([model.joint(j).qposadr[0] for j in khop])
+        self.lo = np.array([model.joint(j).range[0] for j in khop])
+        self.hi = np.array([model.joint(j).range[1] for j in khop])
         self.jacp = np.zeros((3, model.nv))
         self.jacr = np.zeros((3, model.nv))
 
@@ -124,6 +125,36 @@ def lap_ke_hoach(p_vat, yaw_vat, p_dat, y_hien_tai):
     ]
 
 
+class NhipXem:
+    """Gọi sau MỖI bước mô phỏng khi có viewer. Chỉ vẽ lại ~60 lần/giây (không phải 500 lần/giây như
+    trước: model nhiều mesh như PiPER thì mỗi lần sync rất tốn) và giữ mô phỏng chạy đúng thời gian thực
+    theo đồng hồ. Trả về False khi người dùng đã đóng cửa sổ."""
+
+    def __init__(self, viewer, fps=60):
+        self.v, self.chu_ky = viewer, 1.0 / fps
+        self.t_ve, self.goc = -1.0, None
+
+    def __call__(self, d):
+        if self.v is None:
+            return True
+        if not self.v.is_running():
+            return False
+        if d.time < self.t_ve:                    # mô phỏng bị reset (chạy lại) -> đồng hồ tính lại
+            self.t_ve, self.goc = -1.0, None
+        if d.time - self.t_ve < self.chu_ky:
+            return True
+        self.t_ve = d.time
+        self.v.sync()
+        if self.goc is None:
+            self.goc = time.perf_counter() - d.time
+        cho = self.goc + d.time - time.perf_counter()
+        if cho > 0:
+            time.sleep(cho)
+        elif cho < -0.2:                          # chậm hơn thời gian thực (hoặc vừa tạm dừng): không đuổi
+            self.goc -= cho
+        return True
+
+
 def muot(s):
     """Nội suy mượt (smoothstep bậc 5): vận tốc và gia tốc = 0 ở 2 đầu."""
     s = np.clip(s, 0.0, 1.0)
@@ -177,6 +208,7 @@ def chay(xem=False, gif=False, seed=None):
     if xem:
         import mujoco.viewer as mjv
         viewer = mjv.launch_passive(m, d)
+    nhip = NhipXem(viewer)
     renderer = mujoco.Renderer(m, 300, 400) if gif else None
     cam = mujoco.MjvCamera()
     cam.lookat[:] = [0.2, 0.15, 0.12]
@@ -195,11 +227,8 @@ def chay(xem=False, gif=False, seed=None):
                 d.ctrl[act_tay] = q
                 d.ctrl[act_ngon] = (1 - s) * ngon_truoc + s * ngon
             mujoco.mj_step(m, d)
-            if viewer is not None:
-                if not viewer.is_running():
-                    return
-                viewer.sync()
-                time.sleep(m.opt.timestep)
+            if not nhip(d):
+                return
             if renderer is not None and i % 20 == 0:
                 renderer.update_scene(d, cam)
                 khung_hinh.append(renderer.render().copy())
