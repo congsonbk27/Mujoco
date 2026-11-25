@@ -3,6 +3,7 @@
 Chạy:
     python demo/demo_live.py              # mở viewer, chạy liên tục
     python demo/demo_live.py --thu 50     # không cửa sổ: chạy 50 lần, tự bấm phím ngẫu nhiên, đếm lỗi
+    python demo/demo_live.py --piper      # dùng cánh tay AgileX PiPER (cần model Menagerie, xem bai_piper)
 
 Phím (bấm trong cửa sổ viewer):
     Space   tạm dừng / chạy tiếp
@@ -53,11 +54,8 @@ def khong_dau(s):
     return "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
 
 
-class RoBotDemo(X.RoBot):
-    """RoBot của bài camera, thêm: mỗi bước mô phỏng xử lý phím / tạm dừng / vẽ lớp phủ."""
-    # Tư thế chờ khi chụp: quay đế ra phía sau (không có cốc). Tư thế của bài camera (đế = 0) làm cánh
-    # tay che dải y ~ 0 -> chỉ thấy nửa cốc nằm, nhận nhầm là cốc đứng (đo: bỏ sót 5/40 -> 1/40).
-    Q_CHO = np.r_[2.6, X.Q_CHO[1:]]
+class BuocDemo:
+    """Trộn vào lớp robot: mỗi bước mô phỏng xử lý phím / tạm dừng / vẽ lớp phủ."""
 
     def __init__(self, demo, *a, **k):
         super().__init__(*a, **k)
@@ -71,9 +69,24 @@ class RoBotDemo(X.RoBot):
                 self.demo.quay_khung()                 # 20 bước x 2 ms = 25 khung/giây thời gian mô phỏng
 
 
+class RoBotDemo(BuocDemo, X.RoBot):
+    # Tư thế chờ khi chụp: quay đế ra phía sau (không có cốc). Tư thế của bài camera (đế = 0) làm cánh
+    # tay che dải y ~ 0 -> chỉ thấy nửa cốc nằm, nhận nhầm là cốc đứng (đo: bỏ sót 5/40 -> 1/40).
+    Q_CHO = np.r_[2.6, X.Q_CHO[1:]]
+
+
 class Demo:
-    def __init__(self, xem=True, seed=0, quay=None):
-        self.m = X.tao_model(nang_cap=True)       # luôn gắn marker; bản cũ chỉ không dùng tới
+    def __init__(self, xem=True, seed=0, quay=None, piper=False):
+        self.piper = piper
+        if piper:
+            # PiPER (bai_piper): cần model Menagerie; camera trên cao điều khiển, như xep_coc_piper_camera.py
+            sys.path.insert(0, str(GOC / "bai_piper"))
+            import xep_coc_piper_camera as C
+            self.C = C
+            self.m = C.tao_model()
+        else:
+            self.m = X.tao_model(nang_cap=True)   # luôn gắn marker; bản cũ chỉ không dùng tới
+        self.lech_enc_piper = np.zeros(6)
         self.ghi, self.anh_cuoi, self.kich_ban, self.tu_bam = None, None, [], False
         if quay:
             import imageio
@@ -168,7 +181,12 @@ class Demo:
         elif k == "E":
             self.lech_enc = not self.lech_enc
             dau = self.rng.choice([-1, 1], size=len(KHOP_TAY))
-            for i, j in enumerate(KHOP_TAY):
+            if self.piper:
+                # PiPER có khâu tích phân bám ENCODER -> lệch encoder mô phỏng bằng sai số đọc encoder
+                # (biasprm như tay tự dựng sẽ bị khâu tích phân bù mất)
+                self.lech_enc_piper = np.radians(LECH_ENCODER) * dau * self.lech_enc
+                self.robot.lech_enc = self.lech_enc_piper.copy()
+            for i, j in enumerate(KHOP_TAY if not self.piper else []):
                 a = m.actuator(j).id
                 m.actuator_biasprm[a, 0] = (m.actuator_gainprm[a, 0] * np.radians(LECH_ENCODER) * dau[i]
                                             if self.lech_enc else 0.0)
@@ -187,10 +205,11 @@ class Demo:
     def cho_trong(self, ten):
         """Chỗ ngẫu nhiên trong tầm với, cách cốc khác và khu xếp tháp >= 16 cm."""
         khac = [self.d.body(c).xpos[:2] for c in TEN_COC if c != ten] + [self.tam]
+        r0, r1, kc = (0.22, 0.34, 0.15) if self.piper else (0.3, 0.46, 0.16)   # PiPER tầm với ngắn hơn
         for _ in range(200):
-            r, g = self.rng.uniform(0.3, 0.46), self.rng.uniform(-1.2, 0.0)
+            r, g = self.rng.uniform(r0, r1), self.rng.uniform(-1.2, 0.0)
             xy = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(xy - q) > 0.16 for q in khac):
+            if all(np.linalg.norm(xy - q) > kc for q in khac):
                 return xy
         return None
 
@@ -263,6 +282,9 @@ class Demo:
     def dung_coc(self, ten, t):
         print(f"Thấy {ten} NẰM ĐỔ -> dựng lại (xoay bàn tay 90 độ)")
         rb = self.robot
+        if self.piper:                                 # PiPER: nghiêng ±45° (cổ tay chỉ ±70°), xem bai_piper
+            self.C.dung_coc(rb, t["mieng"], t["truc"])
+            return
         buoc = ke_hoach_dung_coc(t["mieng"], t["truc"])
         _, p, y, _, n, T = buoc[0]
         rb.toi_khop(rb.giai_ik_moi(p, y), n, T=1.5)
@@ -271,20 +293,36 @@ class Demo:
 
     def mot_lan(self, seed):
         m, d = self.m, self.d
-        mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
         rng = np.random.default_rng(seed)
-        da_dat = []
+        if self.piper:                                 # model PiPER không có keyframe: đặt tay ở tư thế chờ
+            C = self.C
+            mujoco.mj_resetData(m, d)
+            d.qpos[[m.joint(j).qposadr[0] for j in C.P.KHOP]] = C.TayPiper.Q_CHO
+            d.ctrl[[m.actuator(j).id for j in C.P.KHOP]] = C.TayPiper.Q_CHO
+            vung = (0.22, 0.34, -1.2, 0.2, 0.15)
+        else:
+            mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
+            vung = (0.28, 0.5, -1.3, 0.1, 0.16)
+        r0, r1, g0, g1, kc = vung
+        da_dat, lan = [], 0
         while len(da_dat) < 3:
-            r, g = rng.uniform(0.28, 0.5), rng.uniform(-1.3, 0.1)
+            lan += 1
+            if lan % 200 == 0:                         # vùng nhỏ (PiPER): 2 cốc đầu có thể chiếm hết chỗ
+                da_dat = []
+            r, g = rng.uniform(r0, r1), rng.uniform(g0, g1)
             p = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(p - q) > 0.16 for q in da_dat):
+            if all(np.linalg.norm(p - q) > kc for q in da_dat) and \
+                    (not self.piper or np.linalg.norm(p - self.C.P.TAM_THAP) > 0.15):
                 da_dat.append(p)
         for c, p in zip(TEN_COC, da_dat):
             a = m.joint(m.body(c).jntadr[0]).qposadr[0]
             d.qpos[a:a + 2] = p
         mujoco.mj_forward(m, d)
-        self.robot = rb = RoBotDemo(self, m, d, self.viewer)
+        lop = type("PiperDemo", (BuocDemo, self.C.TayPiper), {}) if self.piper else RoBotDemo
+        self.robot = rb = lop(self, m, d, self.viewer)
         rb.bu = self.bu.copy()
+        if self.piper:
+            rb.lech_enc = self.lech_enc_piper.copy()
         if self.tu_bam:
             self.hen_phim(rb)
         for t, p in self.kich_ban:                     # chế độ quay video: phím hẹn sẵn theo kịch bản
@@ -383,10 +421,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--thu", type=int, metavar="N", help="không cửa sổ: chạy N lần, tự bấm phím ngẫu nhiên")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--piper", action="store_true", help="dùng cánh tay AgileX PiPER (cần model Menagerie)")
     ap.add_argument("--quay", metavar="FILE.mp4", help="không cửa sổ: quay video dự phòng theo kịch bản cố định")
     a = ap.parse_args()
 
-    demo = Demo(xem=a.thu is None and a.quay is None, seed=a.seed, quay=a.quay)
+    demo = Demo(xem=a.thu is None and a.quay is None, seed=a.seed, quay=a.quay, piper=a.piper)
     thuc = sys.stdout
 
     class Ghi:
