@@ -39,7 +39,7 @@ from xep_coc import CAO, NGON_MO, TEN_COC, vi_tri_kim_tu_thap  # noqa: E402
 
 NHIEU_THUONG, NHIEU_MANH = 0.002, 0.010
 LECH_ENCODER = 2.0      # độ
-SO_LAN_THU = 5          # mỗi cốc: số lần nhìn-gắp-đặt tối đa
+SO_LAN_THU = 10         # mỗi cốc: số lần nhìn-gắp-đặt tối đa
 PHIM = {32: "space", ord("R"): "R", ord("1"): "1", ord("2"): "2", ord("3"): "3",
         ord("T"): "T", ord("N"): "N", ord("E"): "E", ord("C"): "C"}
 
