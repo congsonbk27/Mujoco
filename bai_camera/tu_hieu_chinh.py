@@ -77,7 +77,7 @@ class TuHieuChinh:
             y = (0.0, 1.0, 0.0) if i % 2 == 0 else (np.cos(np.arctan2(p[1], p[0])), np.sin(np.arctan2(p[1], p[0])), 0.0)
             q = rb.giai_ik_moi(p, y)
             rb.toi_khop(q, T=1.0)
-            rb.buoc(75)
+            rb.buoc(75 + rb.CHO_THEM)
             self.cam.cap_nhat_ngoai(rb.d)
             du_doan = self.fk_marker(rb.q)              # dự đoán với δ = 0
             # 3 khung hình mỗi tư thế, gom lại rồi lấy trung vị theo từng marker (lọc nhiễu)
@@ -164,7 +164,7 @@ def tu_hieu_chinh(robot, cam):
     """Chạy toàn bộ quy trình: gắn δ̂ vào robot (robot.bu) và phép sửa vào camera.
     Trả về (δ̂, (R, b), rms, số mẫu)."""
     hc = TuHieuChinh(robot, cam)
-    hc.thu_mau(DIEM_HIEU_CHINH)
+    hc.thu_mau(getattr(robot, "DIEM_HIEU_CHINH", DIEM_HIEU_CHINH))   # PiPER: tầm với khác -> điểm riêng
     if len(hc.mau) < 8:
         return None, None, None, len(hc.mau)
     delta, R, b, rms = hc.giai()

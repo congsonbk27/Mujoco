@@ -36,11 +36,6 @@ from realsense import CameraRealSense  # noqa: E402
 from tu_hieu_chinh import tu_hieu_chinh  # noqa: E402
 from xep_coc import CAO, NGON_MO, TEN_COC, vi_tri_kim_tu_thap  # noqa: E402
 
-# Tư thế chờ khi chụp: quay đế ra phía sau (không có cốc). Tư thế của bài camera (đế = 0) làm cánh
-# tay che dải y ~ 0 -> chỉ thấy nửa cốc nằm, nhận nhầm là cốc đứng (đo: bỏ sót 5/40 -> 1/40).
-X.Q_CHO = X.Q_CHO.copy()
-X.Q_CHO[0] = 2.6
-
 NHIEU_THUONG, NHIEU_MANH = 0.002, 0.010
 LECH_ENCODER = 2.0      # độ
 SO_LAN_THU = 5          # mỗi cốc: số lần nhìn-gắp-đặt tối đa
@@ -60,6 +55,9 @@ def khong_dau(s):
 
 class RoBotDemo(X.RoBot):
     """RoBot của bài camera, thêm: mỗi bước mô phỏng xử lý phím / tạm dừng / vẽ lớp phủ."""
+    # Tư thế chờ khi chụp: quay đế ra phía sau (không có cốc). Tư thế của bài camera (đế = 0) làm cánh
+    # tay che dải y ~ 0 -> chỉ thấy nửa cốc nằm, nhận nhầm là cốc đứng (đo: bỏ sót 5/40 -> 1/40).
+    Q_CHO = np.r_[2.6, X.Q_CHO[1:]]
 
     def __init__(self, demo, *a, **k):
         super().__init__(*a, **k)
@@ -342,7 +340,7 @@ class Demo:
                 print(f"Không xếp được {ten} sau {SO_LAN_THU} lần")
                 return False
 
-        rb.toi_khop(X.Q_CHO, NGON_MO, T=1.5)
+        rb.toi_khop(rb.Q_CHO, NGON_MO, T=1.5)
         rb.buoc(int(2.0 / m.opt.timestep))
         # Tiêu chí "tháp đứng vững" (như bai_do_ben): không cốc nào nghiêng > 3°, C1 C2 trên sàn,
         # C3 nằm trên chúng. Không chấm vị trí tuyệt đối: nhiễu camera 10 mm làm cả tháp xê dịch vài mm.
