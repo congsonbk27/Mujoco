@@ -133,13 +133,13 @@ def nhin_gan(rb, cam, ten, goc):
     return thay.get(ten)
 
 
-def gap(rb, cam, ten, goc):
+def gap(rb, cam, ten, goc, khac=()):
     t = nhin_gan(rb, cam, ten, goc)
     if t is not None and t.get("nam"):
         # Nhìn gần đáng tin hơn quét: cốc nằm sát cốc khác, nhìn xiên từ xa có lúc tưởng là cốc đứng.
         # Quét lại thì lại nhầm -> vòng lặp. Dựng luôn theo số đo nhìn gần.
         print(f"  nhìn gần: {ten} đang NẰM -> dựng lại")
-        C.dung_coc(rb, t["mieng"], t["truc"])
+        C.dung_coc(rb, t["mieng"], t["truc"], khac)
         return False
     if t is None:
         print(f"  nhìn gần: không thấy {ten} -> quét lại")
@@ -175,7 +175,7 @@ def lam_mot_lan(rb, cam, thay, ten, dich, da_xep):
     nam = [c for c, t in thay.items() if t.get("nam") and c not in da_xep]
     if nam:
         print(f"  camera thấy {nam[0]} NẰM ĐỔ")
-        C.dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"])
+        C.dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"], [t for c, t in thay.items() if c != nam[0]])
         return
     if ten not in thay:
         print(f"  quét không thấy {ten}")
@@ -187,7 +187,7 @@ def lam_mot_lan(rb, cam, thay, ten, dich, da_xep):
             print("  nhìn gần tháp: không thấy đủ C1, C2 -> quét lại")
             return
     rb.dang_cam = ten
-    if not gap(rb, cam, ten, thay[ten]["goc"]):
+    if not gap(rb, cam, ten, thay[ten]["goc"], [t for c, t in thay.items() if c != ten]):
         return
     if dat(rb, p_dat):
         da_xep.add(ten)

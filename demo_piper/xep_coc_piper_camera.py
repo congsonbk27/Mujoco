@@ -178,6 +178,7 @@ def hien_anh(viewer, anh):
 S_KEP_NAM = 0.05     # gắp cốc nằm ở điểm trên trục cách vành miệng 5 cm (gần giữa thân)
 R_DAT_XOAY = (0.26, 0.30)   # bán kính (tính từ đế) đặt lại cốc sau khi xoay tiếp tuyến
 LUI = 0.025          # lùi TCP khỏi trục cốc theo hướng tiếp cận: lòng bàn tay (TCP - 1.6 cm) không đè thân cốc
+GAN_TAY = 0.11       # cốc đứng gần đường tay gắp nghiêng hơn mức này thì ngón/bàn tay nghiêng quẹt đổ nó
 
 
 def xoay_coc_tiep_tuyen(rb, mieng, truc):
@@ -240,8 +241,39 @@ def truc_ngang(truc):
     return a / np.linalg.norm(a)
 
 
-def dung_coc(rb, mieng, truc):
-    """Dựng cốc nằm: gắp với bàn tay nghiêng 45° dọc trục cốc, nhấc, xoay 90° quanh trục ngón, đặt xuống."""
+def cho_trong(tranh):
+    """Chỗ trống trong khu (bán kính 24-34 cm) cách mọi điểm trong `tranh` >= 16 cm và cách tháp >= 18 cm."""
+    for r in (0.28, 0.24, 0.32):
+        for g in np.linspace(P.G_KHU[0] + 0.2, P.G_KHU[1] - 0.2, 60):
+            q = np.array([r * np.cos(g), r * np.sin(g)])
+            if all(np.linalg.norm(q - k) > 0.16 for k in tranh) and np.linalg.norm(q - P.TAM_THAP) > 0.18:
+                return q
+    return None
+
+
+def don_cho(rb, duong, khac):
+    """Cốc đứng (ngoài tháp) gần đường tay gắp nghiêng: gắp thẳng đứng, dời ra chỗ trống.
+    Trả về True nếu đã dời (người gọi chụp lại rồi mới dựng)."""
+    for t in khac:
+        k = t["goc"]
+        if t.get("nam") or k[2] > 0.01 or np.linalg.norm(k[:2] - P.TAM_THAP) < 0.12:
+            continue      # cốc nằm / tầng 2 / cốc của tháp: không dời
+        if min(np.linalg.norm(q[:2] - k[:2]) for q in duong) >= GAN_TAY:
+            continue
+        q = cho_trong([*(np.asarray(u["goc"])[:2] for u in khac), *(p[:2] for p in duong)])
+        if q is None:
+            return False
+        print("  cốc đứng quá gần đường tay nghiêng -> dời nó ra chỗ trống trước")
+        if X.gap(rb, k):
+            X.dat(rb, [q[0], q[1], 0.0])
+        rb.toi_khop(rb.Q_CHO, rb.NGON_MO, T=1.5)
+        return True
+    return False
+
+
+def dung_coc(rb, mieng, truc, khac=()):
+    """Dựng cốc nằm: gắp với bàn tay nghiêng 45° dọc trục cốc, nhấc, xoay 90° quanh trục ngón, đặt xuống.
+    khac: kết quả camera của các cốc khác, để không quẹt đổ cốc đứng bên cạnh."""
     tam = mieng + 0.045 * truc
     r_hat = np.array([tam[0], tam[1], 0.0]) / np.linalg.norm(tam[:2])
     if abs(truc_ngang(truc) @ r_hat) > 0.5 or np.linalg.norm(tam[:2]) < R_DAT_XOAY[0] - 0.02:   # xuyên tâm / sát đế
@@ -254,6 +286,8 @@ def dung_coc(rb, mieng, truc):
     tcp0 = G - LUI * z0
     p_xoay = tcp0 + [0, 0, 0.10]
     tcp_dat = tcp_dat_sau_dung(mieng, tcp0, p_xoay, R)
+    if don_cho(rb, [tcp0, tcp0 - 0.06 * z0, tcp0 - 0.12 * z0, tcp_dat], khac):
+        return
     print("  dựng cốc: gắp nghiêng 45°, xoay 90° quanh trục ngón")
     # Tới trên cao (tay chúc xuống) bằng không gian khớp rồi mới hạ + nghiêng theo đường thẳng: đi thẳng
     # trong không gian khớp tới điểm gắp thấp thì ngón quét ngang qua cốc bên cạnh (đã gặp: hất đổ C1).
@@ -416,7 +450,7 @@ def lam_mot_lan(rb, cam, thay, ten, i, dich, da_xep, nang_cap, d):
     nam = [c for c, t in thay.items() if t.get("nam") and c not in da_xep]
     if nam:
         print(f"  camera thấy {nam[0]} NẰM ĐỔ")
-        dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"])
+        dung_coc(rb, thay[nam[0]]["mieng"], thay[nam[0]]["truc"], [t for c, t in thay.items() if c != nam[0]])
         return False
     if ten not in thay:
         print(f"  camera không thấy {ten}")

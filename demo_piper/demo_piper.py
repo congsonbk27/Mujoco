@@ -296,9 +296,9 @@ class Demo:
             ve.text((16, 8 + i * 30), chu(s), font=f if i == 0 else fn, fill=(255, 255, 255) if i else (255, 220, 80))
         self.ghi.append_data(np.asarray(im))
 
-    def dung_coc(self, ten, t):
+    def dung_coc(self, ten, t, khac=()):
         print(f"Thấy {ten} NẰM ĐỔ -> dựng lại (xoay bàn tay 90 độ)")
-        C.dung_coc(self.robot, t["mieng"], t["truc"])   # nghiêng ±45° (cổ tay PiPER chỉ ±70°)
+        C.dung_coc(self.robot, t["mieng"], t["truc"], khac)   # nghiêng ±45° (cổ tay PiPER chỉ ±70°)
 
     def rai_coc(self, seed):
         """Đặt lại tay + rải 3 cốc ngẫu nhiên (theo seed) trong vùng với tới, cách nhau và cách tháp."""
@@ -357,7 +357,7 @@ class Demo:
         thay = self.nhin()
         nam = [c for c, t in thay.items() if t.get("nam") and c not in self.da_xep]
         if nam:
-            self.dung_coc(nam[0], thay[nam[0]])
+            self.dung_coc(nam[0], thay[nam[0]], [t for c, t in thay.items() if c != nam[0]])
             return False
         if ten not in thay:
             print(f"Camera không thấy {ten}")
