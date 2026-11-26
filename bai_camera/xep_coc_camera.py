@@ -206,7 +206,7 @@ def nhin(robot, cam, ghi_anh=None):
     return thay
 
 
-def gap(robot, p_coc, nang_cap=False, cam=None):
+def gap(robot, p_coc, nang_cap=False, cam=None, khi_lech_lon=None):
     """Gắp cốc có gốc ở p_coc. Trả về True nếu kẹp được (kiểm tra bằng độ mở ngón).
     nang_cap=True: kiểm tra thêm SAU KHI NHẤC (cốc có thể tuột khi nhấc, ví dụ do ma sát thấp)."""
     x, y, z = p_coc
@@ -214,17 +214,27 @@ def gap(robot, p_coc, nang_cap=False, cam=None):
     if nang_cap:
         # Chỉnh tay đúng tâm cốc TRƯỚC khi hạ xuống: nếu tay lệch theo trục x (dọc mặt ngón),
         # 2 ngón không tự kéo cốc vào giữa -> cốc nằm lệch trong kẹp -> đặt cũng lệch theo.
-        x, y = chinh_tay(robot, cam, [x, y], robot.NGON_MO)
+        x, y = chinh_tay(robot, cam, [x, y], robot.NGON_MO, khi_lech_lon)
     robot.toi([x, y, z + robot.Z_KEP], robot.NGON_MO, T=1.2)
     robot.toi([x, y, z + robot.Z_KEP], robot.NGON_DONG, T=0.6)
     mo = robot.do_mo_ngon()
+    mo_toi_da = getattr(robot, "NGON_MO_KEP_TOT", None)
+    if nang_cap and mo_toi_da is not None and mo > mo_toi_da:
+        # Ngón mở rộng hơn bình thường = kẹp lệch tâm cốc -> nhấc lên cốc sẽ tuột. Mở ra, chỉnh tâm lại, kẹp lại.
+        print(f"    ! ngón mở {mo*1000:.1f} mm (kẹp lệch) -> chỉnh tâm lại rồi kẹp lại")
+        robot.toi([x, y, z + robot.Z_KEP], robot.NGON_MO, T=0.6)
+        robot.toi([x, y, robot.Z_DI], robot.NGON_MO, T=1.0)
+        x, y = chinh_tay(robot, cam, p_coc[:2], robot.NGON_MO)
+        robot.toi([x, y, z + robot.Z_KEP], robot.NGON_MO, T=1.2)
+        robot.toi([x, y, z + robot.Z_KEP], robot.NGON_DONG, T=0.6)
+        mo = robot.do_mo_ngon()
     if mo < NGUONG_KEP_HUT:
         print(f"    ! kẹp hụt (ngón chỉ mở {mo*1000:.1f} mm) -> mở kẹp, nhìn lại")
         robot.toi([x, y, z + robot.Z_KEP], robot.NGON_MO, T=0.5)
         robot.toi([x, y, robot.Z_DI], robot.NGON_MO, T=1.0)
         return False
     robot.toi([x, y, robot.Z_DI], robot.NGON_DONG, T=1.2)
-    if nang_cap and con_coc(robot) is False:
+    if nang_cap and not con_coc(robot):
         print("    ! cốc tuột khi nhấc lên -> mở kẹp, nhìn lại")
         robot.toi([x, y, robot.Z_DI], robot.NGON_MO, T=0.5)
         return False
@@ -240,6 +250,7 @@ SAI_SO_CHO_PHEP = 0.0015   # chỉnh tay tới khi lệch < 1.5 mm
 LECH_TOI_DA = 0.02         # đo thấy tay lệch > 2 cm sau tự hiệu chỉnh -> coi là đo sai, không chỉnh
 SO_KHUNG = 3
 SO_LAN_CHINH = 3
+LECH_BAT_THUONG = 0.010   # lần đo đầu lệch > 10 mm (bình thường <= 8 mm) -> encoder vừa đổi
 
 
 def do_vi_tri_tay(robot, cam):
@@ -257,7 +268,7 @@ def do_vi_tri_tay(robot, cam):
     return np.median(kq, axis=0) if kq else None
 
 
-def chinh_tay(robot, cam, xy_muon, ngon):
+def chinh_tay(robot, cam, xy_muon, ngon, khi_lech_lon=None):
     """VISUAL SERVOING: đang lơ lửng ở độ cao robot.Z_DI, dùng camera đo vị trí THẬT của bàn tay
     (2 marker) rồi dịch tay tới khi trục tay trùng xy_muon (lệch < 1.5 mm).
     Trả về xy cần RA LỆNH (khác xy_muon đúng bằng sai số động học/encoder tại chỗ đó)."""
@@ -270,6 +281,8 @@ def chinh_tay(robot, cam, xy_muon, ngon):
             break
         lech = np.array(xy_muon[:2]) - xy_that
         print(f"    chỉnh lần {k+1}: tay lệch {np.linalg.norm(lech)*1000:.1f} mm")
+        if k == 0 and khi_lech_lon is not None and np.linalg.norm(lech) > LECH_BAT_THUONG:
+            khi_lech_lon()
         if np.linalg.norm(lech) > LECH_TOI_DA:
             print("    (lệch quá lớn -> nghi đo sai, không chỉnh)")
             break
@@ -280,7 +293,7 @@ def chinh_tay(robot, cam, xy_muon, ngon):
     return lenh
 
 
-def dat(robot, p_dat, cam=None, nang_cap=False):
+def dat(robot, p_dat, cam=None, nang_cap=False, khi_lech_lon=None):
     """Đặt cốc đang cầm xuống p_dat. Trả về False nếu phát hiện cốc đã rơi trên đường đi.
 
     nang_cap=True:
@@ -298,7 +311,7 @@ def dat(robot, p_dat, cam=None, nang_cap=False):
             print("    ! cốc đã rơi trên đường chở -> quay lại tìm")
             robot.toi([x, y, robot.Z_DI], robot.NGON_MO, T=0.5)
             return False
-        lenh = chinh_tay(robot, cam, [x, y], robot.NGON_DONG)
+        lenh = chinh_tay(robot, cam, [x, y], robot.NGON_DONG, khi_lech_lon)
     robot.toi([lenh[0], lenh[1], z + robot.Z_KEP + robot.THA_CAO], robot.NGON_DONG, T=1.8)
     robot.toi([lenh[0], lenh[1], z + robot.Z_KEP + robot.THA_CAO], robot.NGON_MO, T=0.6)
     robot.toi([lenh[0], lenh[1], robot.Z_DI], robot.NGON_MO, T=1.2)
