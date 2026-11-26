@@ -44,6 +44,10 @@ PHIM = {32: "space", ord("R"): "R", ord("1"): "1", ord("2"): "2", ord("3"): "3",
         ord("T"): "T", ord("N"): "N", ord("E"): "E", ord("C"): "C"}
 
 
+class LechLon(Exception):
+    """Camera thấy tay lệch bất thường: bộ bù encoder không còn đúng, cần hiệu chỉnh lại."""
+
+
 class ChayLai(Exception):
     pass
 
@@ -398,15 +402,44 @@ class Demo:
             print(f"Camera không thấy {ten}")
             return False
         self.dang_cam = ten
-        if not X.gap(rb, thay[ten]["goc"], self.nang_cap, self.cam):
+        p_gap = thay[ten]["goc"]
+        try:
+            if not X.gap(rb, p_gap, self.nang_cap, self.cam, self.bao_lech_lon()):
+                return False
+        except LechLon:
+            self.can_hieu_chinh = True            # tay đang trống -> vòng thử sau hiệu chỉnh ngay
             return False
         p_dat = dich[i]
         if ten == "coc3" and "coc1" in thay and "coc2" in thay:
             p_dat = (thay["coc1"]["goc"] + thay["coc2"]["goc"]) / 2 + np.array([0, 0, CAO])
-        if X.dat(rb, p_dat, self.cam, self.nang_cap):
-            self.da_xep.add(ten)
-            return True
+        try:
+            if X.dat(rb, p_dat, self.cam, self.nang_cap, self.bao_lech_lon()):
+                self.da_xep.add(ten)
+                return True
+        except LechLon:
+            # Hiệu chỉnh khi đang kẹp cốc làm cốc xê dịch trong kẹp (PiPER servo mềm) -> trả cốc về
+            # chỗ vừa gắp (chắc chắn trống), nhả ra, rồi hiệu chỉnh với tay trống.
+            self.tra_coc(rb, p_gap)
+            self.can_hieu_chinh = True
         return False
+
+    def bao_lech_lon(self):
+        """PiPER + bản nâng cấp: hàm báo lệch bất thường cho chinh_tay; tay 6DOF giữ cách cũ."""
+        if not (self.piper and self.nang_cap):
+            return None
+
+        def bao():
+            print("    (lệch bất thường -> nghi encoder đổi, hiệu chỉnh lại)")
+            raise LechLon()
+        return bao
+
+    def tra_coc(self, rb, p):
+        """Đặt cốc đang cầm về vị trí p, nhả kẹp, nhấc tay lên."""
+        x, y, z = p
+        rb.cho_toi([x, y], rb.NGON_DONG)
+        rb.toi([x, y, z + rb.Z_KEP + rb.THA_CAO], rb.NGON_DONG, T=1.8)
+        rb.toi([x, y, z + rb.Z_KEP + rb.THA_CAO], rb.NGON_MO, T=0.6)
+        rb.toi([x, y, rb.Z_DI], rb.NGON_MO, T=1.2)
 
     def xep_mot_coc(self, rb, i, ten, dich):
         """Thử tối đa SO_LAN_THU lần cho cốc `ten`. Trả về True khi đặt xong."""
