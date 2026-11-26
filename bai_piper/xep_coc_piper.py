@@ -41,6 +41,9 @@ THA_CAO = 0.003
 NGON_MO = 0.035     # joint7: 0 = đóng, 0.035 = mở hết (khe 7 cm)
 NGON_DONG = 0.0
 TAM_THAP = (0.06, 0.30)
+# Khu làm việc vẽ trên bàn (hình quạt quanh đế): cốc chỉ được rải/dời trong khu này, tháp cũng xếp trong khu
+R_KHU = (0.18, 0.42)        # bán kính trong/ngoài (m)
+G_KHU = (-1.35, 1.65)       # góc từ trục x (rad); tháp ở góc ~1.37
 # PiPER chỉ chúc bàn tay thẳng xuống được khi TCP thấp hơn ~11 cm so với mặt đế (khớp gập cổ tay joint5
 # chỉ ±70°). Xếp tháp cần TCP từ 8 cm (gắp) tới 21 cm (di chuyển) so với mặt bàn -> đặt tay lên BỆ 13 cm.
 BE = 0.13
@@ -74,6 +77,7 @@ def tao_spec():
     mat = spec.add_material(name="luoi", texrepeat=[8, 8])
     mat.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = tex.name
     w.add_geom(type=mujoco.mjtGeom.mjGEOM_PLANE, size=[1, 1, 0.05], material="luoi")
+    ve_khu(w)
     w.add_light(pos=[0, 0, 1.5], dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL)
     w.add_site(name="dich", type=mujoco.mjtGeom.mjGEOM_CYLINDER, pos=[*TAM_THAP, 0.001], size=[0.09, 0.001, 0],
                rgba=[0, .8, 0, .3])
@@ -128,6 +132,30 @@ def lap_ke_hoach(nguon, dich, y_kep):
     return kh
 
 
+def ve_khu(w, n=24):
+    """Viền khu làm việc: các đoạn capsule mảnh, chỉ để nhìn (không va chạm), màu xám xanh nhạt
+    độ bão hoà thấp để bộ nhận dạng màu cốc không bắt nhầm."""
+    def doan(a, b):
+        w.add_geom(type=mujoco.mjtGeom.mjGEOM_CAPSULE, fromto=[*a, 0.0005, *b, 0.0005], size=[0.003, 0, 0],
+                   contype=0, conaffinity=0, rgba=[.35, .38, .45, 1])
+    diem = lambda r, g: (r * np.cos(g), r * np.sin(g))
+    gs = np.linspace(*G_KHU, n + 1)
+    for r in R_KHU:
+        for g0, g1 in zip(gs[:-1], gs[1:]):
+            doan(diem(r, g0), diem(r, g1))
+    for g in G_KHU:
+        doan(diem(R_KHU[0], g), diem(R_KHU[1], g))
+
+
+def trong_khu(xy, le=0.04):
+    """xy nằm trong khu, cách viền >= le (bán kính cốc)."""
+    r, g = np.hypot(*xy[:2]), np.arctan2(xy[1], xy[0])
+    return R_KHU[0] + le <= r <= R_KHU[1] - le and G_KHU[0] + le / r <= g <= G_KHU[1] - le / r
+
+
+R_RAI = (R_KHU[0] + 0.04, R_KHU[1] - 0.04)   # bán kính rải/dời cốc: trong khu, cách viền 1 bán kính cốc
+
+
 def rai_coc_ngau_nhien(m, d, seed):
     """Rải 3 cốc ngẫu nhiên trong vùng với tới của PiPER (bán kính 0.22-0.34 m), tránh chỗ xếp tháp."""
     rng = np.random.default_rng(seed)
@@ -136,9 +164,9 @@ def rai_coc_ngau_nhien(m, d, seed):
         lan += 1
         if lan % 200 == 0:          # vùng với tới nhỏ: 2 cốc đầu có thể chiếm hết chỗ -> rải lại từ đầu
             da_dat = []
-        r, g = rng.uniform(0.22, 0.34), rng.uniform(-1.2, 0.2)
+        r, g = rng.uniform(*R_RAI), rng.uniform(-1.2, 0.2)
         p = np.array([r * np.cos(g), r * np.sin(g)])
-        if all(np.linalg.norm(p - q) > 0.14 for q in da_dat) and np.linalg.norm(p - TAM_THAP) > 0.15:
+        if all(np.linalg.norm(p - q) > 0.14 for q in da_dat) and np.linalg.norm(p - TAM_THAP) > 0.15 and trong_khu(p):
             da_dat.append(p)
     for c, p in zip(TEN_COC, da_dat):
         a = m.joint(m.body(c).jntadr[0]).qposadr[0]

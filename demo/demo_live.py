@@ -234,11 +234,11 @@ class Demo:
     def cho_trong(self, ten):
         """Chỗ ngẫu nhiên trong tầm với, cách cốc khác và khu xếp tháp >= 16 cm."""
         khac = [self.d.body(c).xpos[:2] for c in TEN_COC if c != ten] + [self.tam]
-        r0, r1, kc = (0.22, 0.34, 0.15) if self.piper else (0.3, 0.46, 0.16)   # PiPER tầm với ngắn hơn
+        r0, r1, kc = (*self.C.P.R_RAI, 0.15) if self.piper else (0.3, 0.46, 0.16)   # PiPER tầm với ngắn hơn
         for _ in range(200):
             r, g = self.rng.uniform(r0, r1), self.rng.uniform(-1.2, 0.0)
             xy = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(xy - q) > kc for q in khac):
+            if all(np.linalg.norm(xy - q) > kc for q in khac) and (not self.piper or self.C.P.trong_khu(xy)):
                 return xy
         return None
 
@@ -336,7 +336,7 @@ class Demo:
             mujoco.mj_resetData(m, d)
             d.qpos[[m.joint(j).qposadr[0] for j in C.P.KHOP]] = C.TayPiper.Q_CHO
             d.ctrl[[m.actuator(j).id for j in C.P.KHOP]] = C.TayPiper.Q_CHO
-            vung = (0.22, 0.34, -1.2, 0.2, 0.15)
+            vung = (*C.P.R_RAI, -1.2, 0.2, 0.15)
         else:
             mujoco.mj_resetDataKeyframe(m, d, m.key("san_sang").id)
             vung = (0.28, 0.5, -1.3, 0.1, 0.16)
@@ -349,7 +349,7 @@ class Demo:
             r, g = rng.uniform(r0, r1), rng.uniform(g0, g1)
             p = np.array([r * np.cos(g), r * np.sin(g)])
             if all(np.linalg.norm(p - q) > kc for q in da_dat) and \
-                    (not self.piper or np.linalg.norm(p - self.C.P.TAM_THAP) > 0.15):
+                    (not self.piper or (np.linalg.norm(p - self.C.P.TAM_THAP) > 0.15 and self.C.P.trong_khu(p))):
                 da_dat.append(p)
         for c, p in zip(TEN_COC, da_dat):
             a = m.joint(m.body(c).jntadr[0]).qposadr[0]

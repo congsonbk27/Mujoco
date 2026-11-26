@@ -215,11 +215,11 @@ class Demo:
     def cho_trong(self, ten):
         """Chỗ ngẫu nhiên trong tầm với, cách cốc khác và khu xếp tháp >= 16 cm."""
         khac = [self.d.body(c).xpos[:2] for c in TEN_COC if c != ten] + [self.tam]
-        r0, r1, kc = 0.22, 0.34, 0.15                 # tầm với của PiPER
+        r0, r1, kc = *C.P.R_RAI, 0.15                 # tầm với của PiPER
         for _ in range(200):
             r, g = self.rng.uniform(r0, r1), self.rng.uniform(-1.2, 0.0)
             xy = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(xy - q) > kc for q in khac):
+            if all(np.linalg.norm(xy - q) > kc for q in khac) and C.P.trong_khu(xy):
                 return xy
         return None
 
@@ -307,7 +307,7 @@ class Demo:
         mujoco.mj_resetData(m, d)                      # model PiPER không có keyframe: đặt tay ở tư thế chờ
         d.qpos[[m.joint(j).qposadr[0] for j in C.P.KHOP]] = C.TayPiper.Q_CHO
         d.ctrl[[m.actuator(j).id for j in C.P.KHOP]] = C.TayPiper.Q_CHO
-        r0, r1, g0, g1, kc = 0.22, 0.34, -1.2, 0.2, 0.15
+        r0, r1, g0, g1, kc = *C.P.R_RAI, -1.2, 0.2, 0.15
         da_dat, lan = [], 0
         while len(da_dat) < 3:
             lan += 1
@@ -316,7 +316,7 @@ class Demo:
             r, g = rng.uniform(r0, r1), rng.uniform(g0, g1)
             p = np.array([r * np.cos(g), r * np.sin(g)])
             if all(np.linalg.norm(p - q) > kc for q in da_dat) and \
-                    np.linalg.norm(p - C.P.TAM_THAP) > 0.15:
+                    np.linalg.norm(p - C.P.TAM_THAP) > 0.15 and C.P.trong_khu(p):
                 da_dat.append(p)
         for c, p in zip(TEN_COC, da_dat):
             a = m.joint(m.body(c).jntadr[0]).qposadr[0]

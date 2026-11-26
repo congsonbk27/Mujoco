@@ -285,9 +285,9 @@ def tao_canh(seed, do_coc):
             lan += 1
             if lan % 200 == 0:
                 da_dat = []
-            r, g = rng.uniform(0.22, 0.34), rng.uniform(-1.2, 0.2)
+            r, g = rng.uniform(*P.R_RAI), rng.uniform(-1.2, 0.2)
             p = np.array([r * np.cos(g), r * np.sin(g)])
-            if all(np.linalg.norm(p - q) > 0.15 for q in da_dat) and np.linalg.norm(p - P.TAM_THAP) > 0.15:
+            if all(np.linalg.norm(p - q) > 0.15 for q in da_dat) and np.linalg.norm(p - P.TAM_THAP) > 0.15 and P.trong_khu(p):
                 da_dat.append(p)
         for c, p in zip(TEN_COC, da_dat):
             d.qpos[qadr[c]:qadr[c] + 2] = p
