@@ -65,7 +65,7 @@ class TayPiper(X.RoBot):
     KHOP = P.KHOP
     ACT_NGON, KHOP_NGON = "gripper", "joint7"
     # Tư thế chờ khi chụp: cánh tay ngả ra SAU đế (không có cốc ở đó) -> không che cốc
-    Q_CHO = np.array([2.6, 1.2, -1.0, 0.0, 0.8, 0.0])
+    Q_CHO = np.array([2.2, 1.2, -1.0, 0.0, 0.8, 0.0])
     Z_KEP, Z_DI, THA_CAO = P.Z_KEP, P.Z_DI, P.THA_CAO
     NGON_MO, NGON_DONG = P.NGON_MO, P.NGON_DONG
     KC_MARKER = 0.085
@@ -245,7 +245,10 @@ def dung_coc(rb, mieng, truc):
     tam = mieng + 0.045 * truc
     r_hat = np.array([tam[0], tam[1], 0.0]) / np.linalg.norm(tam[:2])
     if abs(truc_ngang(truc) @ r_hat) > 0.5 or np.linalg.norm(tam[:2]) < R_DAT_XOAY[0] - 0.02:   # xuyên tâm / sát đế
-        mieng, truc = xoay_coc_tiep_tuyen(rb, mieng, truc)
+        # Return so the caller re-measures the cup: releasing the grip drags it a few cm off the predicted pose,
+        # and a 45° grasp at the predicted pose then misses and flings the cup against the pedestal.
+        xoay_coc_tiep_tuyen(rb, mieng, truc)
+        return
     z0, z1, y, R = huong_nghieng(truc, truc_ngang(truc))
     G = mieng + S_KEP_NAM * truc
     tcp0 = G - LUI * z0
@@ -367,9 +370,15 @@ def chay(xem=False, seed=None, nang_cap=False, do_coc=False, lech_encoder=0.0, p
     return ok
 
 
+R_NAM_MAX = 0.34   # bán kính xa nhất PiPER dựng được cốc nằm (đo bằng thử nhiều seed)
+
+
 def xo_do(m, d, rng, ten, ly_do, dxy=(0.0, 0.0), goc=None):
     """Khách xô đổ cốc: đặt cốc nằm (lệch dxy so với chỗ cũ), hướng ngẫu nhiên nếu không cho goc."""
     xy = d.body(ten).xpos[:2] + np.asarray(dxy)
+    r = np.hypot(*xy)
+    if r > R_NAM_MAX:                 # cốc nằm ở mép ngoài: bước xoay/dựng cốc phải với quá tầm PiPER
+        xy = xy * R_NAM_MAX / r
     dat_coc_nam(m, d, ten, xy, rng.uniform(-np.pi, np.pi) if goc is None else goc)
     d.qvel[m.joint(m.body(ten).jntadr[0]).dofadr[0]:][:6] = 0
     print(f"  >>> {ly_do}")
