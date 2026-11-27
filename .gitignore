@@ -19,3 +19,10 @@ Thumbs.db
 
 # Cấu hình Claude Code riêng của từng máy
 .claude/settings.local.json
+
+# Dữ liệu và kết quả train YOLO (sinh lại bằng bai_yolo/sinh_du_lieu.py, huan_luyen.py)
+bai_yolo/du_lieu/
+bai_yolo/runs/
+yolov8n-seg.pt
+yolo26n.pt
+bai_yolo/du_lieu_thu/

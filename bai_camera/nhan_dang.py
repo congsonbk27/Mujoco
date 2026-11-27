@@ -28,7 +28,8 @@ def hsv(color):
 # Lọc theo SẮC ĐỘ (hue) chứ không theo giá trị RGB: mặt cốc được đèn chiếu sáng (xanh nhạt) và
 # thành cốc trong bóng (xanh đậm) có RGB rất khác nhau nhưng CÙNG hue.
 # Độ bão hoà S > 0.35 để loại sàn (xám, S~0) và cánh tay (xám-xanh, S~0.2).
-def mat_na_mau(color):
+def mat_na_hsv(color):
+    """Mặt nạ (H x W, bool) cho từng cốc và cho marker hồng trên bàn tay, bằng lọc màu."""
     h, s, v = hsv(color)
     co_mau = (s > 0.35) & (v > 0.12)
     return {
@@ -38,7 +39,17 @@ def mat_na_mau(color):
         "coc1": co_mau & ((h < 30) | (h > 340)),      # đỏ
         "coc2": co_mau & (h > 170) & (h < 250),       # xanh dương
         "coc3": co_mau & (h >= 30) & (h < 75),        # vàng
+        "marker": co_mau & (h > 280) & (h < 325),     # hồng
     }
+
+
+# Bộ tạo mặt nạ đang dùng: mặc định lọc màu. bai_yolo thay bằng mạng YOLO (cùng đầu vào / đầu ra);
+# mọi bước sau (chiếu ra 3D bằng depth, phân biệt cốc đứng / nằm, gom cụm marker) giữ nguyên.
+BO_MAT_NA = mat_na_hsv
+
+
+def mat_na(color):
+    return BO_MAT_NA(color)
 
 
 KC_MARKER = 0.052   # mỗi marker cách trục bàn tay 5.2 cm theo trục x
@@ -55,8 +66,7 @@ def tim_marker(cam, color, depth, xy_uoc_luong, so_diem_toi_thieu=15, kc=KC_MARK
       - thấy 2 cụm thì lấy trung bình 2 kết quả.
     Trả về None nếu không thấy marker nào.
     """
-    h, s, v = hsv(color)
-    mask = (s > 0.35) & (v > 0.12) & (h > 280) & (h < 325) & (depth > 0)
+    mask = mat_na(color)["marker"] & (depth > 0)
     vv, uu = np.nonzero(mask)
     if len(uu) < so_diem_toi_thieu:
         return None
@@ -116,7 +126,9 @@ def tim_coc(cam, color, depth, so_diem_toi_thieu=40):
     """Trả về dict: tên cốc -> {'goc': vị trí gốc cốc (tâm vành miệng) [x,y,z], 'so_diem': n, 'uv': (u,v)}.
     Cốc không thấy (bị che / ngoài khung hình) sẽ không có trong dict."""
     ket_qua = {}
-    for ten, mask in mat_na_mau(color).items():
+    for ten, mask in mat_na(color).items():
+        if ten == "marker":
+            continue
         mask = mask & (depth > 0)                 # bỏ điểm ảnh không đo được depth
         v, u = np.nonzero(mask)
         if len(u) < so_diem_toi_thieu:

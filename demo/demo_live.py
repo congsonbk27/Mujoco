@@ -539,7 +539,12 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--piper", action="store_true", help="dùng cánh tay AgileX PiPER (cần model Menagerie)")
     ap.add_argument("--quay", metavar="FILE.mp4", help="không cửa sổ: quay video dự phòng theo kịch bản cố định")
+    ap.add_argument("--yolo", action="store_true", help="nhận dạng bằng YOLO (bai_yolo) thay cho lọc màu")
     a = ap.parse_args()
+    if a.yolo:                                   # nhận dạng bằng YOLO thay cho lọc màu (bai_yolo)
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "bai_yolo"))
+        import yolo_mat_na
+        yolo_mat_na.bat_yolo()
 
     demo = Demo(xem=a.thu is None and a.quay is None, seed=a.seed, quay=a.quay, piper=a.piper)
     thuc = sys.stdout

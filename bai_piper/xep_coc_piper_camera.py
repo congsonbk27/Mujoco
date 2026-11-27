@@ -479,5 +479,10 @@ if __name__ == "__main__":
     ap.add_argument("--lech-encoder", type=float, default=0.0, metavar="DO")
     ap.add_argument("--pha-do", action="store_true",
                     help="cốc đổ GIỮA CHỪNG: xô đổ cốc chưa xếp, xô đổ cốc của tháp, cốc tuột khi chở")
+    ap.add_argument("--yolo", action="store_true", help="nhận dạng bằng YOLO (bai_yolo) thay cho lọc màu")
     a = ap.parse_args()
+    if a.yolo:                                   # nhận dạng bằng YOLO thay cho lọc màu (bai_yolo)
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "bai_yolo"))
+        import yolo_mat_na
+        yolo_mat_na.bat_yolo()
     raise SystemExit(0 if chay(a.xem, a.ngau_nhien, a.nang_cap, a.do_coc, a.lech_encoder, a.pha_do) else 1)

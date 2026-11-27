@@ -18,7 +18,7 @@ hiệu chỉnh tay-mắt: tay và camera trở nên nhất quán với nhau, đ�
 import mujoco
 import numpy as np
 
-from nhan_dang import hsv
+import nhan_dang
 
 LAM_CANG_TAY = 0.3
 # Tay 6DOF: 8 điểm (không kém 12 điểm) với tốc độ cũ -> ~9.7 s thay vì ~14.5 s. Đi nhanh hơn (0.5 s, chờ 50%)
@@ -32,8 +32,7 @@ TEN_MARKER = ["marker_trai", "marker_phai"]
 
 def do_marker_3d(cam, color, depth, so_diem_toi_thieu=12):
     """Trả về list các tâm 3D (mặt trên) của từng cụm điểm hồng trong ảnh."""
-    h, s, v = hsv(color)
-    mask = (s > 0.35) & (v > 0.12) & (h > 280) & (h < 325) & (depth > 0)
+    mask = nhan_dang.mat_na(color)["marker"] & (depth > 0)
     vv, uu = np.nonzero(mask)
     if len(uu) < so_diem_toi_thieu:
         return []

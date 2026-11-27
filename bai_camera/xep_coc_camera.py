@@ -544,5 +544,10 @@ if __name__ == "__main__":
     ap.add_argument("--pha", action="store_true", help="dời cốc khi tay đang làm")
     ap.add_argument("--ngau-nhien", type=int, metavar="SEED")
     ap.add_argument("--nang-cap", action="store_true", help="phát hiện rơi cốc + visual servoing khi đặt")
+    ap.add_argument("--yolo", action="store_true", help="nhận dạng bằng YOLO (bai_yolo) thay cho lọc màu")
     a = ap.parse_args()
+    if a.yolo:                                   # nhận dạng bằng YOLO thay cho lọc màu (bai_yolo)
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "bai_yolo"))
+        import yolo_mat_na
+        yolo_mat_na.bat_yolo()
     raise SystemExit(0 if chay(a.xem, a.gif, a.ngau_nhien, a.pha, nang_cap=a.nang_cap) else 1)
