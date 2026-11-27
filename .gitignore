@@ -5,3 +5,17 @@ MUJOCO_LOG.TXT
 *.mp4
 bai_piper/mujoco_menagerie/
 demo_piper/mujoco_menagerie
+
+# Môi trường Python (mỗi máy tự tạo: python -m venv venv)
+venv/
+.venv/
+
+# Editor, hệ điều hành, log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Cấu hình Claude Code riêng của từng máy
+.claude/settings.local.json

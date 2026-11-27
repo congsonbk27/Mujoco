@@ -81,3 +81,23 @@ python xep_coc_piper_cotay.py --xem --ngau-nhien 2               # dùng camera 
 | `xep_coc_camera.py`, `realsense.py`, `nhan_dang.py`, `tu_hieu_chinh.py` | Camera giả lập, nhận dạng cốc, tự hiệu chỉnh |
 | `gap_do.py`, `xep_coc.py`, `xep_coc.xml`, `coc_nam.py` | Giải IK, quỹ đạo, cảnh và kích thước cốc |
 | `kiem_tra_may.py` | Kiểm tra máy |
+
+## Chạy nhanh (khi đã cài đặt xong)
+
+Linux / macOS:
+
+```bash
+cd demo_piper
+source venv/bin/activate
+python demo_piper.py
+```
+
+Windows:
+
+```bat
+cd demo_piper
+venv\Scripts\activate
+python demo_piper.py
+```
+
+Nếu terminal từng đặt `MUJOCO_GL=egl` thì gõ `unset MUJOCO_GL` trước, nếu không cửa sổ 3D sẽ không mở.

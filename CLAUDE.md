@@ -9,7 +9,7 @@ MuJoCo robotics lessons (Vietnamese identifiers, comments, and docs; reply to th
 ## Setup and running
 
 ```bash
-pip install mujoco numpy pillow matplotlib PyOpenGL     # developed on MuJoCo 4.0.1, Python 3.12
+pip install mujoco numpy pillow matplotlib PyOpenGL imageio   # imageio only for --quay; developed on MuJoCo 4.0.1, Python 3.12
 ```
 
 Every script takes `--xem` (open the interactive viewer) and `--ngau-nhien SEED` (random cup layout). Without `--xem` they run headless and print a result.
@@ -22,10 +22,12 @@ python bai_coc_nam/coc_nam.py --ngau-nhien 3
 python bai_piper/xep_coc_piper_camera.py --nang-cap [--do-coc] [--lech-encoder DEG] [--pha-do]
 python demo/demo_live.py                 # live demo with sabotage keys (see module docstring)
 python demo/demo_live.py --thu 50        # headless soak test: 50 runs with random key presses
+python demo/demo_live.py --piper [--thu 50]  # same demo on PiPER (current reference: 48/50)
 python demo/kiem_tra_may.py              # demo-machine check (realtime factor, render GPU)
 ```
 
 - Headless rendering on a server: `export MUJOCO_GL=egl`. Do **not** set it when opening the viewer.
+- Regression check for refactors: run scenarios with a fixed seed before and after and `diff` the printed logs; they should match line for line. PiPER camera scripts without `--ngau-nhien` seed their RNG from `None`, so they differ run to run.
 - PiPER lessons need the Menagerie model, which is gitignored: `git clone --depth 1 https://github.com/google-deepmind/mujoco_menagerie bai_piper/mujoco_menagerie`.
 
 ### Robustness benchmark (`bai_do_ben`)
@@ -59,7 +61,7 @@ Lessons build on each other through `sys.path.insert` of sibling folders and pla
 - `demo_piper/`: standalone PiPER-only copy sent to customers (flat folder, customer clones Menagerie into it). After changing any `bai_*` module it uses, run `python dong_bo_demo_piper.py` to re-copy. `demo_piper.py`, `kiem_tra_may.py` and `README.md` there are hand-edited and not synced: port `demo/demo_live.py` changes manually.
 
 ### `--nang-cap` (upgrade) mode
-Self-calibration at startup (12 poses, half with the hand rotated 90° so the wrist-pitch joint is observable), visual servoing on hand markers before release, and drop detection via finger opening. Without it the arm trusts the camera and encoders blindly.
+Self-calibration at startup (`tu_hieu_chinh`, 8 of the 12 poses in `DIEM_HIEU_CHINH`, ~10 s on 6DOF, ~8 s on PiPER). Each camera sample is paired with the encoder reading at capture time (`RoBot.doc_encoder`), so the arm need not be fully settled; outlier marker samples are dropped and the fit is re-solved. Robot classes override `DIEM_HIEU_CHINH`, `T_DI_HIEU_CHINH`, `HE_SO_CHO_HIEU_CHINH` (PiPER moves faster; on 6DOF faster motion hurt the benchmark). Then visual servoing on hand markers before release, and drop detection via finger opening. Without it the arm trusts the camera and encoders blindly.
 
 ## Conventions and gotchas
 
@@ -67,4 +69,4 @@ Self-calibration at startup (12 poses, half with the hand rotated 90° so the wr
 - Sites are in a hidden `sitegroup` so the camera does not see them (the red TCP site was once detected as a cup).
 - IK must be seeded (`RoBot.giai_ik_moi`) and moves between distant poses go through joint space (`toi_khop`); unseeded IK can land on a flipped-wrist branch.
 - Benchmark success criteria are "đứng vững" (tower stands) and "đẹp" (C3 within 1 cm of centered), not absolute position.
-- `KE_HOACH_DEMO.md` and `demo/KICH_BAN_DEMO.md` hold the customer-demo plan and script; per-lesson `README.md` files hold results and lessons learned. Update the relevant README when results change.
+- `KE_HOACH_DEMO.md` and `demo/KICH_BAN_DEMO.md` hold the customer-demo plan and script; `KE_HOACH_TIEP_THEO.md` the remaining to-do list; `KE_HOACH_ROBOT_THAT.md` the plan for moving to a real PiPER + RealSense; per-lesson `README.md` files hold results and lessons learned. Update the relevant README when results change.

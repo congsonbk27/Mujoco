@@ -68,6 +68,7 @@ class TayPiper(X.RoBot):
     Q_CHO = np.array([2.2, 1.2, -1.0, 0.0, 0.8, 0.0])
     Z_KEP, Z_DI, THA_CAO = P.Z_KEP, P.Z_DI, P.THA_CAO
     NGON_MO, NGON_DONG = P.NGON_MO, P.NGON_DONG
+    NGON_MO_KEP_TOT = 0.036   # kẹp chắc: ngón mở ~29 mm; >= 36 mm thì cốc thường tuột khi nhấc
     KC_MARKER = 0.085
     CHO_THEM = 400        # servo PiPER (mềm + tích phân) cần ~0.8 s mới đứng yên trong ~1 mm
     # Điểm tự hiệu chỉnh: trong vùng PiPER chúc tay thẳng xuống được (TCP thấp hơn mặt đế + 11 cm),
